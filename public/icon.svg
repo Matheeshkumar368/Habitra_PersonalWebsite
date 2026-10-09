@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0f172a" />
+      <stop offset="50%" stop-color="#1e1b4b" />
+      <stop offset="100%" stop-color="#312e81" />
+    </linearGradient>
+    <linearGradient id="leaf" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#34d399" />
+      <stop offset="100%" stop-color="#10b981" />
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" rx="112" fill="url(#bg)" />
+  <rect x="36" y="36" width="440" height="440" rx="88" fill="none" stroke="#6366f1" stroke-width="8" stroke-opacity="0.35" />
+  <!-- Pixel-style sprout & cozy window -->
+  <rect x="136" y="320" width="240" height="28" rx="8" fill="#f59e0b" />
+  <rect x="176" y="348" width="160" height="68" rx="10" fill="#d97706" />
+  <rect x="244" y="216" width="24" height="108" rx="6" fill="url(#leaf)" />
+  <path d="M256 228 C180 228 156 156 228 148 C252 146 256 196 256 228 Z" fill="url(#leaf)" />
+  <path d="M256 252 C332 252 356 180 284 172 C260 170 256 220 256 252 Z" fill="#6ee7b7" />
+  <circle cx="380" cy="132" r="24" fill="#fde047" />
+</svg>

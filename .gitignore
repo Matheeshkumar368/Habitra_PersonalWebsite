@@ -1,0 +1,28 @@
+# Dependencies
+node_modules/
+
+# Build & Release Outputs
+build/
+dist/
+release/
+coverage/
+src-tauri/target/
+
+# Environment & Secrets
+.env*
+!.env.example
+
+# Personal Data, Backups & Private Audio (Never commit personal data)
+*Habitra_Backup*.json
+*.db
+*.sqlite
+public/music/**/*.mp3
+public/music/**/*.flac
+public/music/**/*.m4a
+
+# OS & Editor Artifacts
+.DS_Store
+Thumbs.db
+*.log
+.idea/
+.vscode/

@@ -1,0 +1,6 @@
+{
+  "name": "SMK Ambient Habit",
+  "description": "A cozy pixel-art ambient productivity workspace, habit tracker, focus timer, and lo-fi soundscape studio with 100% local-first IndexedDB autosave.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

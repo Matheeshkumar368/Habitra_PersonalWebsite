@@ -1,0 +1,200 @@
+{
+  "version": 2,
+  "title": "Habitra Local Music Library Manifest",
+  "description": "Bundled CC0/Public-Domain tracks and folder-based discovery manifest for Habitra. Add your own MP3, WAV, OGG, FLAC, or M4A files to the category folders and list them here, or import files/folders directly inside the Habitra Music page.",
+  "categories": [
+    {
+      "id": "ambient",
+      "label": "Ambient",
+      "folder": "ambient",
+      "icon": "✨",
+      "description": "Warm pads, hearth drones, and calm atmospheric textures"
+    },
+    {
+      "id": "focus",
+      "label": "Focus",
+      "folder": "focus",
+      "icon": "🎧",
+      "description": "Deep work lo-fi chords and rhythmic study progressions"
+    },
+    {
+      "id": "nature",
+      "label": "Nature",
+      "folder": "nature",
+      "icon": "🌲",
+      "description": "Harmonic forest breezes, acoustic chimes, and organic beds"
+    },
+    {
+      "id": "rain",
+      "label": "Rain",
+      "folder": "rain",
+      "icon": "🌧️",
+      "description": "Velvet rain lo-fi keys and cozy rainy cafe soundtracks"
+    },
+    {
+      "id": "instrumental",
+      "label": "Instrumental",
+      "folder": "instrumental",
+      "icon": "🎹",
+      "description": "Soft felt piano nocturnes and acoustic arpeggios"
+    }
+  ],
+  "tracks": [
+    {
+      "id": "bundled_velvet_rain_lofi",
+      "title": "Velvet Rain Lo-Fi",
+      "artist": "Habitra Studio",
+      "description": "Warm electric piano chords over gentle rainy window reflections",
+      "category": "rain",
+      "src": "./music/rain/velvet-rain-lofi.wav",
+      "durationSeconds": 12,
+      "source": "bundled_file",
+      "license": "CC0-1.0 Public Domain",
+      "sceneAffinity": "rainy_cafe"
+    },
+    {
+      "id": "bundled_midnight_study_chords",
+      "title": "Midnight Study Chords",
+      "artist": "Habitra Studio",
+      "description": "Deep concentration chord progression for late-night reading",
+      "category": "focus",
+      "src": "./music/focus/midnight-study-chords.wav",
+      "durationSeconds": 12,
+      "source": "bundled_file",
+      "license": "CC0-1.0 Public Domain",
+      "sceneAffinity": "study_room"
+    },
+    {
+      "id": "bundled_deep_work_pulse",
+      "title": "Deep Work Harmonic Pulse",
+      "artist": "Habitra Studio",
+      "description": "Rhythmic 2Hz harmonic focus bed for coding and study sessions",
+      "category": "focus",
+      "src": "./music/focus/deep-work-pulse.wav",
+      "durationSeconds": 16,
+      "source": "bundled_file",
+      "license": "CC0-1.0 Public Domain",
+      "sceneAffinity": "cyberpunk_room"
+    },
+    {
+      "id": "bundled_cozy_hearth_drone",
+      "title": "Cozy Hearth Drone",
+      "artist": "Habitra Studio",
+      "description": "Warm fireside harmonic drone for quiet evening relaxation",
+      "category": "ambient",
+      "src": "./music/ambient/cozy-hearth-drone.wav",
+      "durationSeconds": 12,
+      "source": "bundled_file",
+      "license": "CC0-1.0 Public Domain",
+      "sceneAffinity": "cozy_bedroom"
+    },
+    {
+      "id": "bundled_starlight_drift_pad",
+      "title": "Starlight Drift Pad",
+      "artist": "Habitra Studio",
+      "description": "Slowly evolving celestial pad for calm evening reflection",
+      "category": "ambient",
+      "src": "./music/ambient/starlight-drift-pad.wav",
+      "durationSeconds": 16,
+      "source": "bundled_file",
+      "license": "CC0-1.0 Public Domain",
+      "sceneAffinity": "space_station"
+    },
+    {
+      "id": "bundled_forest_breeze_harmonic",
+      "title": "Forest Breeze Harmonic",
+      "artist": "Habitra Studio",
+      "description": "Organic woodland overtones and serene morning resonance",
+      "category": "nature",
+      "src": "./music/nature/forest-breeze-harmonic.wav",
+      "durationSeconds": 12,
+      "source": "bundled_file",
+      "license": "CC0-1.0 Public Domain",
+      "sceneAffinity": "forest_cabin"
+    },
+    {
+      "id": "bundled_lantern_acoustic_arp",
+      "title": "Lantern Acoustic Arpeggio",
+      "artist": "Habitra Studio",
+      "description": "Plucked acoustic harp and guitar arpeggios in a lantern-lit study",
+      "category": "instrumental",
+      "src": "./music/instrumental/lantern-acoustic-arp.wav",
+      "durationSeconds": 16,
+      "source": "bundled_file",
+      "license": "CC0-1.0 Public Domain",
+      "sceneAffinity": "japanese_study"
+    },
+    {
+      "id": "bundled_nocturne_felt_piano",
+      "title": "Nocturne in Felt Piano",
+      "artist": "Habitra Studio",
+      "description": "Intimate felt piano chords and delicate upper-register melody",
+      "category": "instrumental",
+      "src": "./music/instrumental/nocturne-felt-piano.wav",
+      "durationSeconds": 16,
+      "source": "bundled_file",
+      "license": "CC0-1.0 Public Domain",
+      "sceneAffinity": "night_library"
+    },
+    {
+      "id": "lofi_rain",
+      "title": "Lofi Rain (Live Synth)",
+      "artist": "Habitra WebAudio Engine",
+      "description": "Real-time generative Cmaj9 / Am9 / Fmaj7 / G13 lo-fi keys",
+      "category": "rain",
+      "src": "synth://lofi_rain",
+      "durationSeconds": 32,
+      "source": "procedural_synth",
+      "license": "CC0-1.0 Public Domain",
+      "sceneAffinity": "study_room"
+    },
+    {
+      "id": "ambient_piano",
+      "title": "Nocturne in Amber (Live Synth)",
+      "artist": "Habitra WebAudio Engine",
+      "description": "Generative Dm9 / Bbmaj9 soft felt piano progression",
+      "category": "instrumental",
+      "src": "synth://ambient_piano",
+      "durationSeconds": 32,
+      "source": "procedural_synth",
+      "license": "CC0-1.0 Public Domain",
+      "sceneAffinity": "night_library"
+    },
+    {
+      "id": "midnight_synth",
+      "title": "Starlight Horizon (Live Synth)",
+      "artist": "Habitra WebAudio Engine",
+      "description": "Generative warm analog drift pads for night journeys",
+      "category": "ambient",
+      "src": "synth://midnight_synth",
+      "durationSeconds": 32,
+      "source": "procedural_synth",
+      "license": "CC0-1.0 Public Domain",
+      "sceneAffinity": "train_journey"
+    },
+    {
+      "id": "cozy_guitar",
+      "title": "Espresso & Pages (Live Synth)",
+      "artist": "Habitra WebAudio Engine",
+      "description": "Generative mellow café acoustic chord voicings",
+      "category": "instrumental",
+      "src": "synth://cozy_guitar",
+      "durationSeconds": 32,
+      "source": "procedural_synth",
+      "license": "CC0-1.0 Public Domain",
+      "sceneAffinity": "rainy_cafe"
+    },
+    {
+      "id": "cyber_chill",
+      "title": "Emerald Canopy (Live Synth)",
+      "artist": "Habitra WebAudio Engine",
+      "description": "Generative binaural focus progression",
+      "category": "focus",
+      "src": "synth://cyber_chill",
+      "durationSeconds": 32,
+      "source": "procedural_synth",
+      "license": "CC0-1.0 Public Domain",
+      "sceneAffinity": "forest_cabin"
+    }
+  ]
+}
