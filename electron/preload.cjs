@@ -16,12 +16,23 @@ contextBridge.exposeInMainWorld('habitraDesktop', {
   setStartupPref: (enabled) => {
     ipcRenderer.send('habitra-set-startup-pref', Boolean(enabled));
   },
+  getMusicManifest: () => {
+    return ipcRenderer.invoke('habitra-get-music-manifest').catch(() => null);
+  },
   onTrayAction: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, action) => callback(action);
     ipcRenderer.on('habitra-tray-action', listener);
     return () => {
       ipcRenderer.removeListener('habitra-tray-action', listener);
+    };
+  },
+  onMinimizedToTray: (callback) => {
+    if (typeof callback !== 'function') return () => {};
+    const listener = (_event, minimized) => callback(Boolean(minimized));
+    ipcRenderer.on('habitra-minimized-to-tray', listener);
+    return () => {
+      ipcRenderer.removeListener('habitra-minimized-to-tray', listener);
     };
   },
 });

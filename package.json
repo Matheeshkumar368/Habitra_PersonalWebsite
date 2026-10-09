@@ -1,6 +1,7 @@
 {
   "name": "habitra",
   "productName": "Habitra",
+  "author": "Habitra Studio",
   "description": "Habitra — Small Habits. Big Life. Local-first pixel-art productivity room, habit tracker, focus timer, and ambient music studio.",
   "private": true,
   "version": "2.5.0",
@@ -12,23 +13,34 @@
     "preview": "vite preview",
     "clean": "rm -rf dist release server.js",
     "lint": "tsc --noEmit",
+    "icons:generate": "node scripts/generate-icons.mjs",
     "desktop:dev": "ELECTRON_START_URL=http://localhost:3000 electron .",
+    "desktop:start": "npm run build && electron .",
     "desktop:pack": "npm run build && electron-builder --dir",
-    "desktop:dist:win": "npm run build && electron-builder --win --x64"
+    "desktop:dist:win": "npm run build && electron-builder --win nsis portable --x64"
   },
   "build": {
     "appId": "com.habitra.desktop",
     "productName": "Habitra",
+    "copyright": "Copyright © 2026 Habitra",
+    "npmRebuild": false,
     "directories": {
       "output": "release"
     },
     "files": [
       "dist/**/*",
       "electron/**/*",
+      "public/icon.ico",
+      "public/icon.png",
+      "public/tray-icon.png",
       "public/icon.svg",
-      "package.json"
+      "package.json",
+      "!**/*.map",
+      "!**/.env*",
+      "!node_modules/**/*"
     ],
     "win": {
+      "icon": "public/icon.ico",
       "target": [
         {
           "target": "nsis",
@@ -38,40 +50,47 @@
           "target": "portable",
           "arch": ["x64"]
         }
-      ],
-      "artifactName": "${productName}-${version}-Windows-${arch}.${ext}"
+      ]
     },
     "nsis": {
+      "artifactName": "${productName}-Setup-${version}-${arch}.${ext}",
       "oneClick": false,
+      "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "createDesktopShortcut": true,
       "createStartMenuShortcut": true,
       "shortcutName": "Habitra",
-      "deleteAppDataOnUninstall": false
+      "deleteAppDataOnUninstall": false,
+      "runAfterFinish": true
+    },
+    "portable": {
+      "artifactName": "${productName}-Portable-${version}-${arch}.${ext}"
     }
   },
   "dependencies": {
-    "@google/genai": "^2.4.0",
-    "@tailwindcss/vite": "^4.3.3",
-    "@vitejs/plugin-react": "^6.1.1",
     "lucide-react": "^0.546.0",
+    "motion": "^12.23.24",
     "react": "^19.0.1",
-    "react-dom": "^19.0.1",
-    "vite": "^8.3.0",
-    "express": "^4.21.2",
-    "dotenv": "^17.2.3",
-    "motion": "^12.23.24"
+    "react-dom": "^19.0.1"
   },
   "devDependencies": {
+    "@google/genai": "^2.4.0",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
+    "dotenv": "^17.2.3",
+    "electron": "^44.7.0",
+    "electron-builder": "^26.15.3",
+    "esbuild": "^0.28.0",
+    "express": "^4.21.2",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
     "typescript": "^7.0.2",
+    "vite": "^8.3.0",
     "vite-plugin-pwa": "^2.0.0"
   }
 }

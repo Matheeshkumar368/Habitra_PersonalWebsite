@@ -191,12 +191,17 @@ export function App() {
   // Active reminder toast in-app notification
   const [reminderToast, setReminderToast] = useState<string | null>(null);
 
-  // Web Notification permission state
+  // Web / Native Desktop Notification permission state
   const [notificationPermission, setNotificationPermission] = useState<
     NotificationPermission | 'unsupported'
   >(() => {
-    if (typeof window !== 'undefined' && 'Notification' in window) {
-      return window.Notification.permission;
+    if (typeof window !== 'undefined') {
+      if ((window as unknown as { habitraDesktop?: unknown }).habitraDesktop) {
+        return 'granted';
+      }
+      if ('Notification' in window) {
+        return window.Notification.permission;
+      }
     }
     return 'unsupported';
   });
@@ -845,6 +850,18 @@ export function App() {
   };
 
   const requestNotificationPermission = async () => {
+    if (
+      typeof window !== 'undefined' &&
+      (window as unknown as { habitraDesktop?: unknown }).habitraDesktop
+    ) {
+      setNotificationPermission('granted');
+      soundEngine.playReminderChime();
+      sendDesktopNotification(
+        '💧 Notifications Active',
+        'Native Windows desktop notifications are enabled for Habitra.'
+      );
+      return;
+    }
     if (typeof window === 'undefined' || !('Notification' in window)) {
       setNotificationPermission('unsupported');
       return;
@@ -1459,6 +1476,7 @@ export function App() {
           setStartupPref?: (enabled: boolean) => void;
           updateTrayTooltip?: (text: string) => void;
           onTrayAction?: (cb: (action: string) => void) => () => void;
+          onMinimizedToTray?: (cb: (minimized: boolean) => void) => () => void;
         };
       }
     ).habitraDesktop;
@@ -1470,6 +1488,12 @@ export function App() {
     desktopApi.setStartupPref?.(Boolean(appState.profile.startWithWindows));
     desktopApi.updateTrayTooltip?.(
       `🌱 Habitra — ${stats.completedToday}/${stats.totalHabits} habits done today`
+    );
+
+    const unsubscribeMinimized = desktopApi.onMinimizedToTray?.(
+      (minimized: boolean) => {
+        setIsMinimizedToTray(minimized);
+      }
     );
 
     const unsubscribe = desktopApi.onTrayAction?.((action: string) => {
@@ -1498,6 +1522,7 @@ export function App() {
 
     return () => {
       if (typeof unsubscribe === 'function') unsubscribe();
+      if (typeof unsubscribeMinimized === 'function') unsubscribeMinimized();
     };
   }, [
     appState.profile.keepRunningInBackground,

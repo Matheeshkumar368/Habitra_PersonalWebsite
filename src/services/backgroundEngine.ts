@@ -151,8 +151,8 @@ export async function dispatchNativeDesktopNotification(options: {
           data?: Record<string, unknown>;
         } = {
           body: options.body,
-          icon: '/icon.svg',
-          badge: '/icon.svg',
+          icon: './icon.svg',
+          badge: './icon.svg',
           tag: options.tag || `habitra_${Date.now()}`,
           data: {
             actionType: options.actionType,
@@ -175,7 +175,7 @@ export async function dispatchNativeDesktopNotification(options: {
   try {
     const n = new Notification(options.title, {
       body: options.body,
-      icon: '/icon.svg',
+      icon: './icon.svg',
       tag: options.tag || `habitra_${Date.now()}`,
     });
     n.onclick = () => {

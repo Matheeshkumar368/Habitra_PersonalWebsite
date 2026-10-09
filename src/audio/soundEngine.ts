@@ -107,27 +107,74 @@ class AmbientSoundEngine {
   }
 
   public async loadMusicManifest(): Promise<ManifestTrackEntry[]> {
-    if (typeof window === 'undefined' || typeof fetch === 'undefined') {
+    if (typeof window === 'undefined') {
       return [];
     }
-    try {
-      const response = await fetch('./music/manifest.json', {
-        cache: 'no-cache',
-      });
-      if (!response.ok) {
-        return [];
+
+    // 1. Check Electron Desktop IPC manifest reader (supports file:// and local folder discovery)
+    const desktopBridge = (
+      window as unknown as {
+        habitraDesktop?: {
+          getMusicManifest?: () => Promise<{ tracks?: ManifestTrackEntry[] } | null>;
+        };
       }
-      const data = await response.json();
-      if (data && Array.isArray(data.tracks)) {
-        this.manifestTracks = data.tracks;
-        this.manifestLoaded = true;
-        this.manifestListeners.forEach((fn) => fn(this.manifestTracks));
-        return this.manifestTracks;
+    ).habitraDesktop;
+
+    if (desktopBridge?.getMusicManifest) {
+      try {
+        const ipcData = await desktopBridge.getMusicManifest();
+        if (ipcData && Array.isArray(ipcData.tracks)) {
+          this.manifestTracks = ipcData.tracks;
+          this.manifestLoaded = true;
+          this.manifestListeners.forEach((fn) => fn(this.manifestTracks));
+          return this.manifestTracks;
+        }
+      } catch {
+        // Continue to HTTP fetch or built-in fallback
       }
-    } catch {
-      // Fallback to BUILTIN_MUSIC_TRACKS if offline cache or manifest fetch fails
     }
-    return [];
+
+    // 2. Standard HTTP/HTTPS fetch when running in browser or PWA
+    if (
+      typeof fetch !== 'undefined' &&
+      window.location.protocol !== 'file:'
+    ) {
+      try {
+        const response = await fetch('./music/manifest.json', {
+          cache: 'no-cache',
+        });
+        if (response.ok) {
+          const data = await response.json();
+          if (data && Array.isArray(data.tracks)) {
+            this.manifestTracks = data.tracks;
+            this.manifestLoaded = true;
+            this.manifestListeners.forEach((fn) => fn(this.manifestTracks));
+            return this.manifestTracks;
+          }
+        }
+      } catch {
+        // Fallback to BUILTIN_MUSIC_TRACKS below
+      }
+    }
+
+    // 3. Offline / file:// fallback using BUILTIN_MUSIC_TRACKS registry
+    this.manifestTracks = BUILTIN_MUSIC_TRACKS.filter(
+      (bt) => bt.id !== 'silent'
+    ).map((bt) => ({
+      id: bt.id,
+      title: bt.title,
+      artist: bt.artist,
+      description: bt.description,
+      category: bt.category,
+      src: bt.src || `synth://${bt.id}`,
+      durationSeconds: bt.durationSeconds,
+      source: bt.source,
+      license: bt.license,
+      sceneAffinity: bt.coverSceneId,
+    }));
+    this.manifestLoaded = true;
+    this.manifestListeners.forEach((fn) => fn(this.manifestTracks));
+    return this.manifestTracks;
   }
 
   public getManifestTracks(): ManifestTrackEntry[] {
