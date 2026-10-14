@@ -56,7 +56,7 @@ interface CommandPaletteModalProps {
   onOpenJournal: (dateStr?: string) => void;
   onOpenNotifications: () => void;
   onInspectHabit: (habit: Habit) => void;
-  onReplayWelcomeAnimation?: () => void;
+  onReplayIntroVideo?: () => void;
 }
 
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
@@ -79,7 +79,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onOpenJournal,
   onOpenNotifications,
   onInspectHabit,
-  onReplayWelcomeAnimation,
+  onReplayIntroVideo,
 }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -205,17 +205,17 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           onNavigateTab('settings');
         },
       },
-      ...(onReplayWelcomeAnimation
+      ...(onReplayIntroVideo
         ? [
             {
-              id: 'cmd_welcome_animation',
+              id: 'cmd_intro_video',
               category: 'Quick Command',
-              icon: '✨',
-              title: 'Play Magical Welcome Experience',
-              subtitle: 'Replay the cinematic awakening animation and world portal',
+              icon: '🎬',
+              title: 'Play Habitra Logo Reveal Video',
+              subtitle: 'Replay the official animated logo reveal intro',
               action: () => {
                 onClose();
-                onReplayWelcomeAnimation();
+                onReplayIntroVideo();
               },
             },
           ]

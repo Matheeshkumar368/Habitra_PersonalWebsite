@@ -1,12 +1,8 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useMemo, useRef, useState } from 'react';
 import {
   Play,
   Pause,
-  SkipForward,
-  SkipBack,
-  RotateCcw,
-  Shuffle,
-  Repeat,
+  Square,
   Volume2,
   VolumeX,
   Star,
@@ -14,46 +10,26 @@ import {
   FolderOpen,
   Search,
   ListMusic,
-  Music,
-  Headphones,
-  Clock,
-  Sparkles,
+  ExternalLink,
+  Youtube,
+  Radio,
   Trash2,
   Plus,
-  RefreshCw,
+  Clock,
+  Sparkles,
+  Info,
+  Film,
+  Music,
   Check,
-  Sliders,
-  Radio,
 } from 'lucide-react';
 import {
-  PlaybackProgressState,
-  UnifiedLibraryTrack,
-  soundEngine,
-} from '../audio/soundEngine';
-import {
-  AMBIENT_SOUNDS,
-  DEFAULT_PLAYLISTS,
-  PIXEL_SCENES,
-} from '../constants/scenesAndPresets';
-import {
-  AmbientSoundId,
-  AudioPreset,
   AudioSettings,
   CustomAudioTrack,
-  MusicCategoryId,
-  RepeatMode,
+  MusicActiveSource,
+  SpotifySavedItem,
   StyleSettings,
-  UserPlaylist,
+  YouTubeSavedItem,
 } from '../types/app';
-
-export type MusicPageSubTab =
-  | 'library'
-  | 'my_music'
-  | 'playlists'
-  | 'ambient'
-  | 'focus'
-  | 'recent'
-  | 'favorites';
 
 interface MusicPlayerViewProps {
   audio: AudioSettings;
@@ -71,1832 +47,836 @@ export const MusicPlayerView: React.FC<MusicPlayerViewProps> = ({
   styleSettings,
   panelBgStyle,
   onUpdateAudio,
-  onSelectTrack,
-  onNextTrack,
-  onPrevTrack,
   onUploadLocalTracks,
 }) => {
-  const [subTab, setSubTab] = useState<MusicPageSubTab>('library');
-  const [searchQuery, setSearchQuery] = useState('');
-  const [selectedCategory, setSelectedCategory] = useState<MusicCategoryId>(
-    audio.activeCategory || 'all'
+  const [activeTab, setActiveTab] = useState<'youtube' | 'spotify' | 'library' | 'saved'>(
+    audio.activeSource === 'spotify' ? 'spotify' : 'youtube'
   );
-  const [sortBy, setSortBy] = useState<'default' | 'title' | 'category' | 'duration'>('default');
-  const [uploadingAudio, setUploadingAudio] = useState(false);
+
+  // Form states
+  const [youtubeInputUrl, setYoutubeInputUrl] = useState('');
+  const [youtubeInputTitle, setYoutubeInputTitle] = useState('');
+  const [youtubeError, setYoutubeError] = useState<string | null>(null);
+
+  const [spotifyInputUrl, setSpotifyInputUrl] = useState('');
+  const [spotifyInputTitle, setSpotifyInputTitle] = useState('');
+  const [spotifyError, setSpotifyError] = useState<string | null>(null);
+
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
-  const [manifestVersion, setManifestVersion] = useState(0);
-  const [coverFailed, setCoverFailed] = useState(false);
-
-  // Playlist creation state
-  const [newPlaylistName, setNewPlaylistName] = useState('');
-  const [newPlaylistDesc, setNewPlaylistDesc] = useState('');
-  const [selectedPlaylistId, setSelectedPlaylistId] = useState<string>(
-    audio.activePlaylistId || DEFAULT_PLAYLISTS[0].id
-  );
-  const [newMixPresetName, setNewMixPresetName] = useState('');
-
-  const [playbackProgress, setPlaybackProgress] =
-    useState<PlaybackProgressState>({
-      currentTime: 0,
-      duration: 0,
-      isSeekable: false,
-      playbackError: null,
-      sourceType: 'none',
-    });
+  const [searchQuery, setSearchQuery] = useState('');
+  const [uploadingMedia, setUploadingMedia] = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const folderInputRef = useRef<HTMLInputElement | null>(null);
 
-  useEffect(() => {
-    const unsubProgress = soundEngine.subscribeProgress((st) =>
-      setPlaybackProgress(st)
-    );
-    const unsubManifest = soundEngine.subscribeManifest(() =>
-      setManifestVersion((v) => v + 1)
-    );
-    return () => {
-      unsubProgress();
-      unsubManifest();
-    };
-  }, []);
+  // YouTube URL parsing & submission
+  const handleAddYouTubeUrl = (e: React.FormEvent) => {
+    e.preventDefault();
+    setYoutubeError(null);
+    const raw = youtubeInputUrl.trim();
+    if (!raw) return;
 
-  const allTracks: UnifiedLibraryTrack[] = useMemo(
-    () => soundEngine.getAllLibraryTracks(audio.customTracks),
-    [audio.customTracks, manifestVersion]
-  );
+    let embedId = '';
+    let isPlaylist = false;
 
-  const currentTrack: UnifiedLibraryTrack = useMemo(() => {
-    return (
-      allTracks.find((t) => t.id === audio.currentTrackId) ||
-      allTracks[0] || {
-        id: 'bundled_velvet_rain_lofi',
-        title: 'Velvet Rain Lo-Fi',
-        artist: 'Habitra Studio',
-        subtitle: 'Bundled CC0 WAV · public/music/rain/',
-        description: 'Warm electric piano chords over gentle rainy window reflections',
-        genre: 'Rain Lo-Fi',
-        category: 'rain',
-        sourceType: 'bundled_file',
-        sourceBadge: 'WAV',
-        durationSeconds: 12,
-        coverImageUrl: PIXEL_SCENES[0]?.imageUrl,
-        isCustom: false,
-      }
-    );
-  }, [allTracks, audio.currentTrackId]);
-
-  useEffect(() => {
-    setCoverFailed(false);
-  }, [currentTrack.id, currentTrack.coverImageUrl]);
-
-  const favoriteIds = audio.favoriteTrackIds || [];
-  const playlists =
-    audio.playlists && audio.playlists.length > 0
-      ? audio.playlists
-      : DEFAULT_PLAYLISTS;
-  const recentlyPlayed = audio.recentlyPlayed || [];
-  const isAmbientActive =
-    Boolean(audio.ambientPlaying ?? audio.isPlaying) &&
-    audio.ambientSoundId !== 'silent';
-
-  const formatAudioTime = (secs: number): string => {
-    if (!Number.isFinite(secs) || secs < 0) return '00:00';
-    const m = Math.floor(secs / 60);
-    const s = Math.floor(secs % 60);
-    return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
-  };
-
-  const probeAudioDuration = (dataUrl: string): Promise<number> => {
-    return new Promise((resolve) => {
-      const tempAudio = new Audio();
-      const timeout = window.setTimeout(() => {
-        tempAudio.src = '';
-        resolve(0);
-      }, 2500);
-      tempAudio.preload = 'metadata';
-      tempAudio.onloadedmetadata = () => {
-        window.clearTimeout(timeout);
-        const dur =
-          Number.isFinite(tempAudio.duration) && tempAudio.duration > 0
-            ? Math.round(tempAudio.duration)
-            : 0;
-        tempAudio.src = '';
-        resolve(dur);
-      };
-      tempAudio.onerror = () => {
-        window.clearTimeout(timeout);
-        tempAudio.src = '';
-        resolve(0);
-      };
-      tempAudio.src = dataUrl;
-    });
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0) return;
-
-    const fileList = Array.from(files);
-    const audioFiles = fileList.filter(
-      (f) =>
-        f.type.startsWith('audio/') ||
-        /\.(mp3|wav|ogg|flac|m4a|aac|webm)$/i.test(f.name)
+    // Detect Playlist: list=...
+    const playlistMatch = raw.match(/[?&]list=([a-zA-Z0-9_-]+)/);
+    // Detect Video: v=... or youtu.be/... or embed/... or shorts/...
+    const videoMatch = raw.match(
+      /(?:youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
     );
 
-    const videoOnlyFiles = fileList.filter(
-      (f) =>
-        (f.type.startsWith('video/') || /\.(mp4|mov)$/i.test(f.name)) &&
-        !/\.(webm)$/i.test(f.name)
-    );
-
-    if (audioFiles.length === 0) {
-      if (videoOnlyFiles.length > 0) {
-        setStatusMessage(
-          `⚠ "${videoOnlyFiles[0].name}" is a video file. To use videos as Realm Portal backgrounds, please upload it in "Customize Space > Custom Backdrop".`
-        );
-      } else {
-        setStatusMessage(
-          '⚠ No supported audio files (.mp3, .wav, .ogg, .flac, .m4a, .aac, .webm) found in selection.'
-        );
-      }
-      window.setTimeout(() => setStatusMessage(null), 5000);
-      e.target.value = '';
+    if (playlistMatch && (!videoMatch || raw.includes('/playlist?list='))) {
+      embedId = playlistMatch[1];
+      isPlaylist = true;
+    } else if (videoMatch) {
+      embedId = videoMatch[1];
+    } else {
+      setYoutubeError('Please enter a valid YouTube video or playlist URL.');
       return;
     }
 
-    setUploadingAudio(true);
-    let importedCount = 0;
-    let duplicateCount = 0;
-    let failedCount = 0;
-    const existingNames = new Set(
-      audio.customTracks.map((t) => t.name.trim().toLowerCase())
-    );
+    const title =
+      youtubeInputTitle.trim() ||
+      (isPlaylist ? 'Custom YouTube Playlist' : 'Custom YouTube Stream');
 
-    try {
-      const newTracks: CustomAudioTrack[] = [];
-      for (const file of audioFiles) {
-        // Robust clean track title preserving Unicode and inner dots
-        const lastDotIdx = file.name.lastIndexOf('.');
-        const cleanName =
-          (lastDotIdx > 0 ? file.name.substring(0, lastDotIdx) : file.name).trim() ||
-          'Untitled Track';
-
-        if (existingNames.has(cleanName.toLowerCase())) {
-          duplicateCount++;
-          continue;
-        }
-
-        try {
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result || ''));
-            reader.onerror = () => reject(reader.error);
-            reader.readAsDataURL(file);
-          });
-
-          const durationSeconds = await probeAudioDuration(dataUrl);
-          const relPath = (file as File & { webkitRelativePath?: string })
-            .webkitRelativePath;
-          const folderParts = relPath ? relPath.split('/') : [];
-          const folderName =
-            folderParts.length > 1 ? folderParts[0].trim() : undefined;
-
-          // Infer category from folder name if matching
-          let inferredCategory: CustomAudioTrack['category'] = 'custom';
-          const lowerFolder = (folderName || '').toLowerCase();
-          if (lowerFolder.includes('ambient')) inferredCategory = 'ambient';
-          else if (lowerFolder.includes('focus') || lowerFolder.includes('study'))
-            inferredCategory = 'focus';
-          else if (lowerFolder.includes('nature') || lowerFolder.includes('forest'))
-            inferredCategory = 'nature';
-          else if (lowerFolder.includes('rain') || lowerFolder.includes('lofi'))
-            inferredCategory = 'rain';
-          else if (
-            lowerFolder.includes('instrumental') ||
-            lowerFolder.includes('piano')
-          )
-            inferredCategory = 'instrumental';
-
-          newTracks.push({
-            id: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-            name: cleanName,
-            dataUrl,
-            category: inferredCategory,
-            artist: folderName || 'Local Import',
-            folderName,
-            durationSeconds,
-            addedAt: new Date().toLocaleDateString('en-US', {
-              month: 'short',
-              day: 'numeric',
-            }),
-          });
-          existingNames.add(cleanName.toLowerCase());
-          importedCount++;
-        } catch {
-          failedCount++;
-        }
-      }
-
-      if (newTracks.length > 0) {
-        onUploadLocalTracks(newTracks);
-        soundEngine.playNotification('success');
-        let msg = `✓ Imported ${importedCount} audio track${
-          importedCount > 1 ? 's' : ''
-        } into your library`;
-        if (duplicateCount > 0) {
-          msg += ` (${duplicateCount} existing duplicate${
-            duplicateCount > 1 ? 's' : ''
-          } skipped)`;
-        }
-        setStatusMessage(msg);
-        window.setTimeout(() => setStatusMessage(null), 4500);
-      } else if (duplicateCount > 0) {
-        setStatusMessage(
-          `ℹ All ${duplicateCount} selected file(s) are already in your library.`
-        );
-        window.setTimeout(() => setStatusMessage(null), 4000);
-      } else if (failedCount > 0) {
-        setStatusMessage('⚠ Could not read one or more selected audio files.');
-        window.setTimeout(() => setStatusMessage(null), 4000);
-      }
-    } catch {
-      setStatusMessage('⚠ Failed to import audio files.');
-      window.setTimeout(() => setStatusMessage(null), 4000);
-    } finally {
-      setUploadingAudio(false);
-      e.target.value = '';
-    }
-  };
-
-  const handleToggleFavorite = (trackId: string) => {
-    const exists = favoriteIds.includes(trackId);
-    onUpdateAudio({
-      favoriteTrackIds: exists
-        ? favoriteIds.filter((id) => id !== trackId)
-        : [...favoriteIds, trackId],
-    });
-  };
-
-  const handleCycleRepeatMode = () => {
-    const order: RepeatMode[] = ['all', 'one', 'off'];
-    const current = audio.repeatMode || 'all';
-    const next = order[(order.indexOf(current) + 1) % order.length];
-    onUpdateAudio({ repeatMode: next });
-  };
-
-  const handleDeleteCustomTrack = (id: string) => {
-    const remaining = audio.customTracks.filter((t) => t.id !== id);
-    const nextTrackId =
-      audio.currentTrackId === id
-        ? 'bundled_velvet_rain_lofi'
-        : audio.currentTrackId;
-    onUpdateAudio({
-      customTracks: remaining,
-      currentTrackId: nextTrackId,
-    });
-  };
-
-  const handleChangeCustomTrackCategory = (
-    id: string,
-    category: CustomAudioTrack['category']
-  ) => {
-    onUpdateAudio({
-      customTracks: audio.customTracks.map((ct) =>
-        ct.id === id ? { ...ct, category } : ct
-      ),
-    });
-  };
-
-  const handleCreatePlaylist = () => {
-    if (!newPlaylistName.trim()) return;
-    const created: UserPlaylist = {
-      id: `pl_${Date.now()}`,
-      name: newPlaylistName.trim(),
-      description:
-        newPlaylistDesc.trim() || 'Custom personal focus & ambient playlist',
-      icon: '🎵',
-      trackIds: [audio.currentTrackId],
-      isBuiltIn: false,
-      createdAt: new Date().toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-      }),
+    const newItem: YouTubeSavedItem = {
+      id: `yt_${Date.now()}`,
+      title,
+      url: raw,
+      embedId,
+      type: isPlaylist ? 'playlist' : 'video',
+      addedAt: new Date().toISOString(),
     };
-    const nextList = [...playlists, created];
+
+    const currentYt = audio.youtubeItems || [];
     onUpdateAudio({
-      playlists: nextList,
-      activePlaylistId: created.id,
+      youtubeItems: [newItem, ...currentYt],
+      activeYouTubeId: embedId,
+      activeSpotifyUri: null,
+      activeSource: 'youtube',
+      isPlaying: true,
     });
-    setSelectedPlaylistId(created.id);
-    setNewPlaylistName('');
-    setNewPlaylistDesc('');
-    setStatusMessage(`✓ Created playlist "${created.name}"`);
+
+    setYoutubeInputUrl('');
+    setYoutubeInputTitle('');
+    setStatusMessage(`✓ Loaded and started YouTube ${isPlaylist ? 'playlist' : 'stream'}.`);
     window.setTimeout(() => setStatusMessage(null), 3000);
   };
 
-  const handleToggleTrackInPlaylist = (playlistId: string, trackId: string) => {
-    const nextPlaylists = playlists.map((pl) => {
-      if (pl.id !== playlistId) return pl;
-      const exists = pl.trackIds.includes(trackId);
-      return {
-        ...pl,
-        trackIds: exists
-          ? pl.trackIds.filter((id) => id !== trackId)
-          : [...pl.trackIds, trackId],
-      };
-    });
-    onUpdateAudio({ playlists: nextPlaylists });
-  };
+  // Spotify Link parsing & submission
+  const handleAddSpotifyUrl = (e: React.FormEvent) => {
+    e.preventDefault();
+    setSpotifyError(null);
+    const raw = spotifyInputUrl.trim();
+    if (!raw) return;
 
-  const handleDeletePlaylist = (playlistId: string) => {
-    const nextPlaylists = playlists.filter((pl) => pl.id !== playlistId);
-    onUpdateAudio({
-      playlists: nextPlaylists,
-      activePlaylistId:
-        audio.activePlaylistId === playlistId ? null : audio.activePlaylistId,
-    });
-    if (selectedPlaylistId === playlistId && nextPlaylists.length > 0) {
-      setSelectedPlaylistId(nextPlaylists[0].id);
-    }
-  };
-
-  const filteredTracks = useMemo(() => {
-    const q = searchQuery.trim().toLowerCase();
-    const list = allTracks.filter((item) => {
-      if (selectedCategory !== 'all') {
-        if (selectedCategory === 'favorites') {
-          if (!favoriteIds.includes(item.id)) return false;
-        } else if (selectedCategory === 'custom') {
-          if (!item.isCustom) return false;
-        } else if (item.category !== selectedCategory) {
-          return false;
-        }
-      }
-      if (!q) return true;
-      return (
-        item.title.toLowerCase().includes(q) ||
-        item.artist.toLowerCase().includes(q) ||
-        item.description.toLowerCase().includes(q) ||
-        item.genre.toLowerCase().includes(q) ||
-        item.category.toLowerCase().includes(q) ||
-        (item.folderName && item.folderName.toLowerCase().includes(q))
-      );
-    });
-
-    if (sortBy === 'title') {
-      return [...list].sort((a, b) => a.title.localeCompare(b.title));
-    }
-    if (sortBy === 'category') {
-      return [...list].sort((a, b) => a.category.localeCompare(b.category));
-    }
-    if (sortBy === 'duration') {
-      return [...list].sort((a, b) => b.durationSeconds - a.durationSeconds);
-    }
-    return list;
-  }, [allTracks, selectedCategory, searchQuery, sortBy, favoriteIds]);
-
-  const activeDuration = Math.max(
-    1,
-    playbackProgress.duration || currentTrack.durationSeconds || 12
-  );
-
-  const renderTrackRow = (
-    item: UnifiedLibraryTrack,
-    options?: {
-      playlistContextId?: string | null;
-      playedAtLabel?: string;
-    }
-  ) => {
-    const isCurrent = audio.currentTrackId === item.id;
-    const isFav = favoriteIds.includes(item.id);
-    return (
-      <div
-        key={`${item.id}_${options?.playedAtLabel || ''}`}
-        className={`group flex items-center justify-between gap-3 p-3 rounded-xl border transition-all ${
-          isCurrent
-            ? 'bg-indigo-600/20 border-indigo-500/50 text-white shadow-md'
-            : 'bg-slate-900/65 hover:bg-slate-900/95 border-slate-800/80 text-slate-200 hover:border-slate-700'
-        }`}
-      >
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <button
-            type="button"
-            onClick={async () => {
-              await soundEngine.resumeContextManually();
-              if (isCurrent) {
-                onUpdateAudio({ isPlaying: !audio.isPlaying });
-              } else {
-                onSelectTrack(item.id, options?.playlistContextId ?? null);
-              }
-            }}
-            className="w-11 h-11 rounded-xl overflow-hidden shrink-0 border border-slate-700/80 bg-slate-950 relative flex items-center justify-center cursor-pointer group/btn"
-            title={
-              isCurrent && audio.isPlaying
-                ? `Pause ${item.title}`
-                : `Play ${item.title}`
-            }
-          >
-            {item.coverImageUrl && (
-              <img
-                src={item.coverImageUrl}
-                alt={item.title}
-                referrerPolicy="no-referrer"
-                onError={(e) => {
-                  (e.currentTarget as HTMLElement).style.display = 'none';
-                }}
-                className="absolute inset-0 w-full h-full object-cover opacity-55 group-hover/btn:opacity-35 transition-opacity"
-              />
-            )}
-            <div className="relative z-10 w-7 h-7 rounded-lg bg-slate-950/85 border border-white/15 flex items-center justify-center text-white">
-              {isCurrent && audio.isPlaying ? (
-                <Pause className="w-3.5 h-3.5 fill-current text-indigo-400" />
-              ) : (
-                <Play className="w-3.5 h-3.5 fill-current ml-0.5" />
-              )}
-            </div>
-          </button>
-
-          <div className="min-w-0 flex-1">
-            <div className="flex items-center gap-2 flex-wrap">
-              <span className="text-xs font-semibold text-white truncate">
-                {item.title}
-              </span>
-              <span
-                className={`px-1.5 py-0.5 rounded text-[9px] font-mono-tabular font-semibold uppercase ${
-                  item.sourceBadge === 'WAV'
-                    ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                    : item.sourceBadge === 'LOCAL'
-                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                    : 'bg-indigo-500/20 text-indigo-300 border border-indigo-500/30'
-                }`}
-              >
-                {item.sourceBadge}
-              </span>
-              <span className="px-1.5 py-0.5 rounded bg-slate-800/90 text-[10px] text-slate-300 capitalize">
-                {item.category}
-              </span>
-              {options?.playedAtLabel && (
-                <span className="text-[10px] text-slate-400 font-mono-tabular">
-                  · Played {options.playedAtLabel}
-                </span>
-              )}
-            </div>
-            <div className="text-[11px] text-slate-400 truncate mt-0.5">
-              {item.artist} — {item.description}
-            </div>
-          </div>
-        </div>
-
-        <div className="flex items-center gap-2 shrink-0">
-          {item.isCustom && (
-            <select
-              value={item.category}
-              onChange={(e) =>
-                handleChangeCustomTrackCategory(
-                  item.id,
-                  e.target.value as CustomAudioTrack['category']
-                )
-              }
-              className="px-2 py-1 rounded-lg bg-slate-950 border border-slate-800 text-[10px] text-slate-300"
-              title="Assign category"
-            >
-              <option value="custom">My Music</option>
-              <option value="focus">Focus</option>
-              <option value="ambient">Ambient</option>
-              <option value="rain">Rain</option>
-              <option value="nature">Nature</option>
-              <option value="instrumental">Instrumental</option>
-            </select>
-          )}
-
-          {item.durationSeconds > 0 && (
-            <span className="text-[11px] font-mono-tabular text-slate-400 hidden sm:inline">
-              {formatAudioTime(item.durationSeconds)}
-            </span>
-          )}
-
-          <button
-            type="button"
-            onClick={() => handleToggleFavorite(item.id)}
-            className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-              isFav
-                ? 'text-amber-400 bg-amber-500/10'
-                : 'text-slate-500 hover:text-slate-200 hover:bg-slate-800'
-            }`}
-            title={isFav ? 'Remove from Favorites' : 'Add to Favorites'}
-          >
-            <Star className={`w-4 h-4 ${isFav ? 'fill-current' : ''}`} />
-          </button>
-
-          {item.isCustom && (
-            <button
-              type="button"
-              onClick={() => handleDeleteCustomTrack(item.id)}
-              className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 transition-colors cursor-pointer"
-              title="Delete imported track"
-            >
-              <Trash2 className="w-4 h-4" />
-            </button>
-          )}
-        </div>
-      </div>
+    const match = raw.match(
+      /(?:open\.spotify\.com\/(track|album|playlist)\/|spotify:(track|album|playlist):)([a-zA-Z0-9]+)/
     );
+
+    if (!match) {
+      setSpotifyError(
+        'Please enter a valid Spotify track, album, or playlist link (open.spotify.com/...)'
+      );
+      return;
+    }
+
+    const type = (match[1] || match[2]) as 'track' | 'album' | 'playlist';
+    const id = match[3];
+    const embedUri = `${type}/${id}`;
+
+    const title =
+      spotifyInputTitle.trim() ||
+      `Spotify ${type.charAt(0).toUpperCase() + type.slice(1)}`;
+
+    const newItem: SpotifySavedItem = {
+      id: `sp_${Date.now()}`,
+      title,
+      url: raw,
+      embedUri,
+      type,
+      addedAt: new Date().toISOString(),
+    };
+
+    const currentSp = audio.spotifyItems || [];
+    onUpdateAudio({
+      spotifyItems: [newItem, ...currentSp],
+      activeSpotifyUri: embedUri,
+      activeYouTubeId: null,
+      activeSource: 'spotify',
+      isPlaying: true,
+    });
+
+    setSpotifyInputUrl('');
+    setSpotifyInputTitle('');
+    setStatusMessage('✓ Loaded and mounted Spotify embed.');
+    window.setTimeout(() => setStatusMessage(null), 3000);
   };
+
+  // Local file upload handler
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+
+    setUploadingMedia(true);
+    const addedTracks: CustomAudioTrack[] = [];
+
+    Array.from(files).forEach((file) => {
+      const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm)$/i.test(file.name);
+      const url = URL.createObjectURL(file);
+      const track: CustomAudioTrack = {
+        id: `local_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        name: file.name.replace(/\.[^/.]+$/, ''),
+        dataUrl: url,
+        mediaType: isVideo ? 'video' : 'audio',
+        category: 'custom',
+        artist: 'Local File',
+        folderName: file.webkitRelativePath ? file.webkitRelativePath.split('/')[0] : 'Library',
+        addedAt: new Date().toISOString(),
+      };
+      addedTracks.push(track);
+    });
+
+    onUploadLocalTracks(addedTracks);
+    setUploadingMedia(false);
+    setStatusMessage(`✓ Imported ${addedTracks.length} local file(s).`);
+    window.setTimeout(() => setStatusMessage(null), 3000);
+  };
+
+  const isYouTubeActive = audio.activeSource === 'youtube' && Boolean(audio.activeYouTubeId);
+  const isSpotifyActive = audio.activeSource === 'spotify' && Boolean(audio.activeSpotifyUri);
+
+  const activeStreamTitle = isYouTubeActive
+    ? audio.youtubeItems?.find((y) => y.embedId === audio.activeYouTubeId)?.title || 'YouTube Stream'
+    : isSpotifyActive
+    ? audio.spotifyItems?.find((s) => s.embedUri === audio.activeSpotifyUri)?.title || 'Spotify Stream'
+    : null;
 
   return (
-    <div className="space-y-4">
-      {/* HIDDEN FILE & FOLDER INPUTS */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a,.aac"
-        multiple
-        onChange={handleFileUpload}
-        className="hidden"
-      />
-      <input
-        ref={folderInputRef}
-        type="file"
-        accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a,.aac"
-        multiple
-        {...({
-          webkitdirectory: '',
-          directory: '',
-        } as React.InputHTMLAttributes<HTMLInputElement>)}
-        onChange={handleFileUpload}
-        className="hidden"
-      />
-
-      {/* 1. HERO NOW PLAYING DECK & MASTER TRANSPORT */}
-      <section
-        className="rounded-2xl border border-slate-800/90 p-5 shadow-2xl relative overflow-hidden"
-        style={panelBgStyle}
-      >
-        <div className="flex flex-col lg:flex-row items-start lg:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
-          <div className="flex items-center gap-3">
-            <div
-              className="w-10 h-10 rounded-xl flex items-center justify-center text-white shadow-md shrink-0"
-              style={{ backgroundColor: styleSettings.accentColor }}
-            >
-              <Music className="w-5 h-5" />
-            </div>
-            <div>
-              <h1 className="text-base sm:text-lg font-bold text-white tracking-tight flex items-center gap-2">
-                <span>Habitra Music Studio &amp; Soundscape Library</span>
-                {audio.isPlaying && (
-                  <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-semibold">
-                    ● Playing
-                  </span>
-                )}
-              </h1>
-              <p className="text-xs text-slate-400">
-                Bundled CC0 WAV stems, procedural WebAudio synths, local folder
-                imports, playlists &amp; multi-channel ambient mixer
-              </p>
-            </div>
-          </div>
-
-          {/* Import Music / Import Folder / Refresh Manifest Actions */}
-          <div className="flex flex-wrap items-center gap-2">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingAudio}
-              className="px-3 py-2 rounded-xl text-xs font-semibold text-white flex items-center gap-1.5 shadow cursor-pointer transition-opacity hover:opacity-95"
-              style={{ backgroundColor: styleSettings.accentColor }}
-            >
-              <Upload className="w-3.5 h-3.5" />
-              <span>{uploadingAudio ? 'Importing...' : '+ Import Music'}</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => folderInputRef.current?.click()}
-              disabled={uploadingAudio}
-              className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-medium text-slate-200 flex items-center gap-1.5 cursor-pointer transition-colors"
-            >
-              <FolderOpen className="w-3.5 h-3.5 text-indigo-400" />
-              <span>+ Import Folder</span>
-            </button>
-
-            <button
-              type="button"
-              onClick={async () => {
-                const tracks = await soundEngine.loadMusicManifest();
-                setManifestVersion((v) => v + 1);
-                setStatusMessage(
-                  `✓ Synced public/music/manifest.json (${tracks.length} manifest tracks loaded)`
-                );
-                window.setTimeout(() => setStatusMessage(null), 3500);
-              }}
-              className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-300 hover:text-white flex items-center gap-1.5 cursor-pointer transition-colors"
-              title="Reload public/music/manifest.json"
-            >
-              <RefreshCw className="w-3.5 h-3.5 text-slate-400" />
-              <span className="hidden sm:inline">Sync Manifest</span>
-            </button>
-          </div>
-        </div>
-
-        {statusMessage && (
-          <div className="mt-3 px-3.5 py-2 rounded-xl bg-indigo-500/15 border border-indigo-500/35 text-xs text-indigo-200 flex items-center justify-between">
-            <span>{statusMessage}</span>
-            <button
-              type="button"
-              onClick={() => setStatusMessage(null)}
-              className="text-slate-400 hover:text-white text-xs cursor-pointer"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-
-        {playbackProgress.playbackError && (
-          <div className="mt-3 px-3.5 py-2 rounded-xl bg-rose-500/15 border border-rose-500/35 text-xs text-rose-200 flex items-center justify-between">
-            <span>⚠ {playbackProgress.playbackError}</span>
-            <button
-              type="button"
-              onClick={() => soundEngine.clearPlaybackError()}
-              className="text-rose-300 hover:text-white text-xs cursor-pointer"
-            >
-              Dismiss
-            </button>
-          </div>
-        )}
-
-        {/* NOW PLAYING CARD + 4-CHANNEL QUICK MIXER */}
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 pt-4">
-          {/* Left 7 cols: Current Track Artwork, Seek Bar & Transport */}
-          <div className="lg:col-span-7 p-4 rounded-2xl bg-slate-950/75 border border-slate-800/90 flex flex-col justify-between gap-4">
-            <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
-              <div className="w-24 h-24 rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-900 shrink-0 relative shadow-lg">
-                {currentTrack.coverImageUrl && !coverFailed ? (
-                  <img
-                    src={currentTrack.coverImageUrl}
-                    alt={currentTrack.title}
-                    referrerPolicy="no-referrer"
-                    onError={() => setCoverFailed(true)}
-                    className="w-full h-full object-cover"
-                  />
-                ) : (
-                  <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-indigo-950/80 to-slate-900 text-3xl">
-                    <span>🎧</span>
-                  </div>
-                )}
-                {audio.isPlaying && (
-                  <div className="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 rounded bg-slate-950/85 border border-indigo-400/40 text-[9px] font-mono-tabular text-indigo-300">
-                    LIVE
-                  </div>
-                )}
-              </div>
-
-              <div className="min-w-0 flex-1 space-y-1">
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="px-2 py-0.5 rounded-md bg-indigo-500/20 border border-indigo-500/30 text-[10px] font-semibold text-indigo-300 uppercase">
-                    {currentTrack.sourceBadge} · {currentTrack.category}
-                  </span>
-                  {audio.activePlaylistId && (
-                    <span className="px-2 py-0.5 rounded-md bg-slate-800 text-[10px] text-slate-300">
-                      Playlist:{' '}
-                      {playlists.find((p) => p.id === audio.activePlaylistId)
-                        ?.name || 'Custom'}
-                    </span>
-                  )}
-                  {isAmbientActive && (
-                    <span className="px-2 py-0.5 rounded-md bg-emerald-500/15 border border-emerald-500/30 text-[10px] text-emerald-300">
-                      + Ambient:{' '}
-                      {AMBIENT_SOUNDS.find((s) => s.id === audio.ambientSoundId)
-                        ?.name || audio.ambientSoundId}
-                    </span>
-                  )}
-                </div>
-
-                <div className="flex items-center justify-between gap-2">
-                  <h2 className="text-base sm:text-lg font-bold text-white truncate">
-                    {currentTrack.title}
-                  </h2>
-                  <button
-                    type="button"
-                    onClick={() => handleToggleFavorite(currentTrack.id)}
-                    className={`p-1.5 rounded-lg border transition-colors cursor-pointer ${
-                      favoriteIds.includes(currentTrack.id)
-                        ? 'text-amber-400 bg-amber-500/15 border-amber-500/30'
-                        : 'text-slate-400 hover:text-white bg-slate-900 border-slate-800'
-                    }`}
-                    title={
-                      favoriteIds.includes(currentTrack.id)
-                        ? 'Remove from Favorites'
-                        : 'Save to Favorites'
-                    }
-                  >
-                    <Star
-                      className={`w-4 h-4 ${
-                        favoriteIds.includes(currentTrack.id)
-                          ? 'fill-current'
-                          : ''
-                      }`}
-                    />
-                  </button>
-                </div>
-
-                <p className="text-xs text-slate-300 font-medium truncate">
-                  {currentTrack.artist} · {currentTrack.genre}
-                </p>
-                <p className="text-[11px] text-slate-400 line-clamp-1">
-                  {currentTrack.description}
-                </p>
-              </div>
-            </div>
-
-            {/* Draggable Progress & Seek Bar */}
-            <div className="space-y-1.5">
-              <input
-                type="range"
-                min={0}
-                max={activeDuration}
-                step={0.25}
-                value={Math.min(playbackProgress.currentTime, activeDuration)}
-                onChange={(e) => soundEngine.seekTo(Number(e.target.value))}
-                className="w-full h-1.5 bg-slate-800 rounded-lg cursor-pointer accent-indigo-500"
-                title="Drag to seek playback position"
-              />
-              <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono-tabular">
-                <span>{formatAudioTime(playbackProgress.currentTime)}</span>
-                <span className="text-[10px] text-slate-500">
-                  {currentTrack.license || 'Local Audio'}
-                </span>
-                <span>{formatAudioTime(activeDuration)}</span>
-              </div>
-            </div>
-
-            {/* Primary Transport Buttons */}
-            <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-              <div className="flex items-center gap-1.5">
-                <button
-                  type="button"
-                  onClick={() => onUpdateAudio({ shuffle: !audio.shuffle })}
-                  className={`px-2.5 py-1.5 rounded-xl border text-xs flex items-center gap-1.5 transition-colors cursor-pointer ${
-                    audio.shuffle
-                      ? 'bg-indigo-500/20 border-indigo-400 text-indigo-300 font-medium'
-                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-                  }`}
-                  title="Toggle Shuffle"
-                >
-                  <Shuffle className="w-3.5 h-3.5" />
-                  <span className="hidden sm:inline">Shuffle</span>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={handleCycleRepeatMode}
-                  className={`px-2.5 py-1.5 rounded-xl border text-xs flex items-center gap-1.5 transition-colors cursor-pointer ${
-                    (audio.repeatMode || 'all') !== 'off'
-                      ? 'bg-indigo-500/20 border-indigo-400 text-indigo-300 font-medium'
-                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-white'
-                  }`}
-                  title="Cycle Repeat Mode (All / One / Off)"
-                >
-                  <Repeat className="w-3.5 h-3.5" />
-                  <span className="capitalize">
-                    {audio.repeatMode === 'one'
-                      ? 'Repeat 1'
-                      : audio.repeatMode === 'off'
-                      ? 'Repeat Off'
-                      : 'Repeat All'}
-                  </span>
-                </button>
-              </div>
-
-              <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  onClick={() => {
-                    soundEngine.resumeContextManually();
-                    soundEngine.restartCurrentTrack();
-                  }}
-                  className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-300 hover:text-white transition-colors cursor-pointer"
-                  title="Restart Track from 00:00"
-                >
-                  <RotateCcw className="w-4 h-4" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await soundEngine.resumeContextManually();
-                    onPrevTrack();
-                  }}
-                  className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 hover:text-white transition-colors cursor-pointer"
-                  title="Previous Track"
-                >
-                  <SkipBack className="w-4 h-4" />
-                </button>
-
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await soundEngine.resumeContextManually();
-                    onUpdateAudio({ isPlaying: !audio.isPlaying });
-                  }}
-                  className="px-5 py-2.5 rounded-xl text-white font-semibold text-xs flex items-center gap-2 shadow-lg transition-opacity hover:opacity-95 cursor-pointer"
-                  style={{ backgroundColor: styleSettings.accentColor }}
-                >
-                  {audio.isPlaying ? (
-                    <>
-                      <Pause className="w-4 h-4 fill-current" />
-                      <span>Pause</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-4 h-4 fill-current" />
-                      <span>Play</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await soundEngine.resumeContextManually();
-                    onNextTrack();
-                  }}
-                  className="p-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-slate-200 hover:text-white transition-colors cursor-pointer"
-                  title="Next Track"
-                >
-                  <SkipForward className="w-4 h-4" />
-                </button>
-              </div>
-            </div>
-          </div>
-
-          {/* Right 5 cols: 4-Channel Master Volume & Sound-Effect Mixer */}
-          <div className="lg:col-span-5 p-4 rounded-2xl bg-slate-950/75 border border-slate-800/90 flex flex-col justify-between space-y-3">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Sliders className="w-4 h-4 text-indigo-400" />
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                  Master Volume &amp; Sound Effects
-                </h3>
-              </div>
-              <button
-                type="button"
-                onClick={() => onUpdateAudio({ isMuted: !audio.isMuted })}
-                className={`px-2.5 py-1 rounded-lg text-[11px] font-medium border flex items-center gap-1 cursor-pointer ${
-                  audio.isMuted
-                    ? 'bg-rose-500/20 border-rose-500/40 text-rose-300'
-                    : 'bg-slate-900 border-slate-800 text-slate-300 hover:text-white'
-                }`}
-              >
-                {audio.isMuted ? (
-                  <>
-                    <VolumeX className="w-3.5 h-3.5" />
-                    <span>Muted</span>
-                  </>
-                ) : (
-                  <>
-                    <Volume2 className="w-3.5 h-3.5" />
-                    <span>Mute All</span>
-                  </>
-                )}
-              </button>
-            </div>
-
-            {/* Channel 1: Music Volume */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-300 font-medium">
-                  🎵 Music Player Volume
-                </span>
-                <span className="font-mono-tabular text-indigo-300">
-                  {audio.isMuted ? '0%' : `${audio.musicVolume}%`}
-                </span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={audio.isMuted ? 0 : audio.musicVolume}
-                onChange={(e) => {
-                  soundEngine.resumeContextManually();
-                  onUpdateAudio({
-                    musicVolume: Number(e.target.value),
-                    isMuted: false,
-                  });
-                }}
-                className="w-full h-1.5 bg-slate-800 rounded-lg cursor-pointer accent-indigo-500"
-              />
-            </div>
-
-            {/* Channel 2: Ambient Soundscape Volume */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-300 font-medium">
-                  🌧️ Ambient Sound ({AMBIENT_SOUNDS.find((s) => s.id === audio.ambientSoundId)?.name || 'Rain'})
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await soundEngine.resumeContextManually();
-                      onUpdateAudio({
-                        ambientPlaying: !isAmbientActive,
-                        ambientSoundId:
-                          audio.ambientSoundId === 'silent'
-                            ? 'rain'
-                            : audio.ambientSoundId,
-                      });
-                    }}
-                    className={`px-1.5 py-0.5 rounded text-[10px] font-semibold cursor-pointer ${
-                      isAmbientActive
-                        ? 'bg-emerald-500/20 text-emerald-300 border border-emerald-500/30'
-                        : 'bg-slate-800 text-slate-400'
-                    }`}
-                  >
-                    {isAmbientActive ? 'ON' : 'OFF'}
-                  </button>
-                  <span className="font-mono-tabular text-emerald-300">
-                    {audio.ambientVolume}%
-                  </span>
-                </div>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={audio.ambientVolume}
-                onChange={(e) => {
-                  soundEngine.resumeContextManually();
-                  onUpdateAudio({
-                    ambientVolume: Number(e.target.value),
-                    isMuted: false,
-                  });
-                }}
-                className="w-full h-1.5 bg-slate-800 rounded-lg cursor-pointer accent-emerald-500"
-              />
-            </div>
-
-            {/* Channel 3: Notification Bell Volume */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-300 font-medium">
-                  🔔 Notification &amp; Timer Bells
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await soundEngine.resumeContextManually();
-                      soundEngine.playReminderChime();
-                    }}
-                    className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-sky-300 cursor-pointer"
-                  >
-                    Test Bell
-                  </button>
-                  <span className="font-mono-tabular text-sky-300">
-                    {audio.notificationVolume ?? 30}%
-                  </span>
-                </div>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={audio.notificationVolume ?? 30}
-                onChange={(e) => {
-                  soundEngine.resumeContextManually();
-                  onUpdateAudio({
-                    notificationVolume: Number(e.target.value),
-                    isMuted: false,
-                  });
-                }}
-                className="w-full h-1.5 bg-slate-800 rounded-lg cursor-pointer accent-sky-500"
-              />
-            </div>
-
-            {/* Channel 4: UI Sound Effects Volume */}
-            <div className="space-y-1">
-              <div className="flex items-center justify-between text-xs">
-                <span className="text-slate-300 font-medium">
-                  ✨ UI Sound Effects (Habit Check)
-                </span>
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await soundEngine.resumeContextManually();
-                      soundEngine.playHabitCheck(true);
-                    }}
-                    className="px-1.5 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-[10px] text-amber-300 cursor-pointer"
-                  >
-                    Test SFX
-                  </button>
-                  <span className="font-mono-tabular text-amber-300">
-                    {audio.uiSoundVolume}%
-                  </span>
-                </div>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={audio.uiSoundVolume}
-                onChange={(e) => {
-                  soundEngine.resumeContextManually();
-                  onUpdateAudio({
-                    uiSoundVolume: Number(e.target.value),
-                    isMuted: false,
-                  });
-                }}
-                className="w-full h-1.5 bg-slate-800 rounded-lg cursor-pointer accent-amber-500"
-              />
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* 2. DEDICATED MUSIC PAGE NAVIGATION TABS */}
+    <div className="space-y-6 max-w-6xl mx-auto pb-12">
+      {/* 1. TOP HEADER & CURRENT STREAM STATUS */}
       <div
-        className="rounded-2xl border border-slate-800/90 p-2 shadow-xl flex flex-wrap items-center justify-between gap-2"
+        className="p-5 sm:p-6 rounded-3xl border border-slate-800/90 shadow-2xl relative overflow-hidden"
         style={panelBgStyle}
       >
-        <div className="flex flex-wrap items-center gap-1">
-          {(
-            [
-              {
-                id: 'library',
-                label: `Music Library (${allTracks.length})`,
-                icon: Music,
-              },
-              {
-                id: 'my_music',
-                label: `My Music (${audio.customTracks.length})`,
-                icon: FolderOpen,
-              },
-              {
-                id: 'playlists',
-                label: `Playlists (${playlists.length})`,
-                icon: ListMusic,
-              },
-              {
-                id: 'ambient',
-                label: 'Ambient Sounds',
-                icon: Radio,
-              },
-              {
-                id: 'focus',
-                label: 'Focus Music',
-                icon: Headphones,
-              },
-              {
-                id: 'recent',
-                label: `Recently Played (${recentlyPlayed.length})`,
-                icon: Clock,
-              },
-              {
-                id: 'favorites',
-                label: `Favorites (${favoriteIds.length})`,
-                icon: Star,
-              },
-            ] as {
-              id: MusicPageSubTab;
-              label: string;
-              icon: React.ElementType;
-            }[]
-          ).map((tab) => {
-            const Icon = tab.icon;
-            const active = subTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setSubTab(tab.id)}
-                className={`px-3 py-2 rounded-xl text-xs font-medium flex items-center gap-1.5 transition-all cursor-pointer ${
-                  active
-                    ? 'text-white shadow-md'
-                    : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/60'
-                }`}
-                style={
-                  active
-                    ? { backgroundColor: styleSettings.accentColor }
-                    : undefined
-                }
-              >
-                <Icon className="w-3.5 h-3.5" />
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Search Input */}
-        <div className="relative min-w-[220px] flex-1 sm:flex-initial">
-          <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input
-            type="text"
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            placeholder="Search songs, artists, folders..."
-            className="w-full pl-8 pr-7 py-1.5 rounded-xl bg-slate-950/90 border border-slate-800 text-xs text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500"
-          />
-          {searchQuery && (
-            <button
-              type="button"
-              onClick={() => setSearchQuery('')}
-              className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white text-xs cursor-pointer"
+        <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div
+              className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border ${
+                isYouTubeActive
+                  ? 'bg-red-500/20 text-red-400 border-red-500/40'
+                  : isSpotifyActive
+                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
+                  : 'bg-slate-900 text-slate-400 border-slate-700'
+              }`}
             >
-              ✕
-            </button>
-          )}
-        </div>
-      </div>
-
-      {/* 3. TAB CONTENT PANELS */}
-      {subTab === 'library' && (
-        <section
-          className="rounded-2xl border border-slate-800/90 p-5 shadow-xl space-y-4"
-          style={panelBgStyle}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            {/* Category Filter Pills */}
-            <div className="flex flex-wrap items-center gap-1.5">
-              {(
-                [
-                  { id: 'all', label: 'All Tracks' },
-                  { id: 'rain', label: '🌧️ Rain' },
-                  { id: 'focus', label: '🎧 Focus' },
-                  { id: 'ambient', label: '✨ Ambient' },
-                  { id: 'nature', label: '🌲 Nature' },
-                  { id: 'instrumental', label: '🎹 Instrumental' },
-                  {
-                    id: 'custom',
-                    label: `📁 My Music (${audio.customTracks.length})`,
-                  },
-                  {
-                    id: 'favorites',
-                    label: `★ Favorites (${favoriteIds.length})`,
-                  },
-                ] as { id: MusicCategoryId; label: string }[]
-              ).map((cat) => {
-                const active = selectedCategory === cat.id;
-                return (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => {
-                      setSelectedCategory(cat.id);
-                      onUpdateAudio({ activeCategory: cat.id });
-                    }}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-medium border transition-colors cursor-pointer ${
-                      active
-                        ? 'bg-indigo-600/30 border-indigo-400 text-white'
-                        : 'bg-slate-900/75 border-slate-800 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {cat.label}
-                  </button>
-                );
-              })}
+              {isYouTubeActive ? (
+                <Youtube className="w-6 h-6" />
+              ) : isSpotifyActive ? (
+                <Radio className="w-6 h-6" />
+              ) : (
+                <Music className="w-6 h-6" />
+              )}
             </div>
 
-            {/* Sort Selector */}
-            <div className="flex items-center gap-2 text-xs text-slate-400">
-              <span>Sort:</span>
-              <select
-                value={sortBy}
-                onChange={(e) =>
-                  setSortBy(e.target.value as typeof sortBy)
-                }
-                className="px-2.5 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white"
-              >
-                <option value="default">Default Library Order</option>
-                <option value="title">Title (A–Z)</option>
-                <option value="category">Category</option>
-                <option value="duration">Duration</option>
-              </select>
-            </div>
-          </div>
-
-          {filteredTracks.length === 0 ? (
-            <div className="py-10 px-4 rounded-2xl bg-slate-950/60 border border-dashed border-slate-800 text-center space-y-2">
-              <div className="text-sm font-semibold text-white">
-                No matching tracks found
+            <div>
+              <div className="flex items-center gap-2">
+                <span
+                  className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
+                    isYouTubeActive
+                      ? 'bg-red-500/30 text-red-200'
+                      : isSpotifyActive
+                      ? 'bg-emerald-500/30 text-emerald-200'
+                      : 'bg-slate-800 text-slate-400'
+                  }`}
+                >
+                  {isYouTubeActive
+                    ? 'YouTube Active'
+                    : isSpotifyActive
+                    ? 'Spotify Active'
+                    : 'Streaming Studio'}
+                </span>
+                <span className="text-xs text-slate-400 font-mono">
+                  Persistent Background Audio
+                </span>
               </div>
-              <p className="text-xs text-slate-400 max-w-md mx-auto">
-                Try clearing your search filter, or click{' '}
-                <strong>+ Import Music</strong> /{' '}
-                <strong>+ Import Folder</strong> above to add audio files from
-                your computer.
-              </p>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              {filteredTracks.map((item) => renderTrackRow(item))}
-            </div>
-          )}
 
-          {/* Local Folder Structure Info Box */}
-          <div className="p-3.5 rounded-xl bg-slate-950/70 border border-slate-800/90 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 text-xs text-slate-400">
-            <div>
-              <span className="text-slate-200 font-semibold">
-                📂 Local Music Folder Registry (`public/music/manifest.json`):
-              </span>{' '}
-              Bundled tracks are organized in{' '}
-              <code className="text-indigo-300">public/music/ambient/</code>,{' '}
-              <code className="text-indigo-300">focus/</code>,{' '}
-              <code className="text-indigo-300">nature/</code>,{' '}
-              <code className="text-indigo-300">rain/</code>, and{' '}
-              <code className="text-indigo-300">instrumental/</code>.
-            </div>
-            <button
-              type="button"
-              onClick={() => folderInputRef.current?.click()}
-              className="px-3 py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-slate-200 font-medium shrink-0 cursor-pointer"
-            >
-              + Load Local Folder
-            </button>
-          </div>
-        </section>
-      )}
-
-      {subTab === 'my_music' && (
-        <section
-          className="rounded-2xl border border-slate-800/90 p-5 shadow-xl space-y-4"
-          style={panelBgStyle}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-bold text-white">
-                My Imported Music ({audio.customTracks.length})
+              <h2 className="text-lg font-bold text-white tracking-tight mt-0.5 truncate max-w-md">
+                {activeStreamTitle || 'Select or paste a YouTube stream or Spotify playlist'}
               </h2>
+
               <p className="text-xs text-slate-400">
-                Personal audio files (.mp3, .wav, .ogg, .flac, .m4a) stored
-                privately in your local IndexedDB database
+                Audio stays mounted and continues playing when you navigate to other Habitra sections.
               </p>
             </div>
+          </div>
+
+          {/* Stop Button when stream is active */}
+          {(isYouTubeActive || isSpotifyActive) && (
             <div className="flex items-center gap-2">
               <button
                 type="button"
-                onClick={() => fileInputRef.current?.click()}
-                className="px-3 py-1.5 rounded-xl text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
-                style={{ backgroundColor: styleSettings.accentColor }}
+                onClick={() =>
+                  onUpdateAudio({
+                    activeYouTubeId: null,
+                    activeSpotifyUri: null,
+                    activeSource: undefined,
+                    isPlaying: false,
+                  })
+                }
+                className="px-3.5 py-2 rounded-xl bg-slate-900/90 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm"
               >
-                <Upload className="w-3.5 h-3.5" />
-                <span>+ Add Audio Files</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => folderInputRef.current?.click()}
-                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs font-medium text-slate-200 flex items-center gap-1.5 cursor-pointer"
-              >
-                <FolderOpen className="w-3.5 h-3.5 text-indigo-400" />
-                <span>+ Add Folder</span>
+                <Square className="w-3.5 h-3.5 fill-current text-rose-400" />
+                <span>Stop Stream</span>
               </button>
             </div>
+          )}
+        </div>
+
+        {statusMessage && (
+          <div className="mt-4 px-3.5 py-2 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-xs text-indigo-200 flex items-center gap-2">
+            <Check className="w-4 h-4 text-indigo-400" />
+            <span>{statusMessage}</span>
+          </div>
+        )}
+      </div>
+
+      {/* 2. SOURCE TABS */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800/80 pb-3">
+        {[
+          {
+            id: 'youtube',
+            label: '▶ YouTube Streams',
+            desc: 'Live lofi, study beats & playlists',
+          },
+          {
+            id: 'spotify',
+            label: '🟢 Spotify Integration',
+            desc: 'Curated playlists & official embeds',
+          },
+          {
+            id: 'library',
+            label: '📁 Personal Library',
+            desc: 'Local MP3/WAV files',
+          },
+          {
+            id: 'saved',
+            label: '⭐ Saved Streams',
+            desc: 'Bookmarked focus stations',
+          },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveTab(tab.id as typeof activeTab)}
+            className={`px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all cursor-pointer flex items-center gap-2 border ${
+              activeTab === tab.id
+                ? 'bg-indigo-600/90 text-white border-indigo-400/40 shadow-lg shadow-indigo-600/20'
+                : 'bg-slate-900/60 text-slate-400 hover:text-white hover:bg-slate-800/80 border-slate-800'
+            }`}
+          >
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
+
+      {/* 3. TAB CONTENT: YOUTUBE */}
+      {activeTab === 'youtube' && (
+        <div className="space-y-6">
+          {/* Add YouTube URL Card */}
+          <div
+            className="p-5 sm:p-6 rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-md shadow-xl"
+            style={panelBgStyle}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <Youtube className="w-5 h-5 text-red-500" />
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                Stream from YouTube
+              </h3>
+            </div>
+            <p className="text-xs text-slate-400 mb-4">
+              Paste any YouTube video or playlist link (e.g. Lofi Girl, synthwave coding stream, classical study).
+              Playback is kept alive across all tabs via the persistent application-shell player.
+            </p>
+
+            <form onSubmit={handleAddYouTubeUrl} className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <input
+                  type="text"
+                  value={youtubeInputUrl}
+                  onChange={(e) => setYoutubeInputUrl(e.target.value)}
+                  placeholder="https://www.youtube.com/watch?v=..."
+                  className="sm:col-span-2 px-3.5 py-2.5 rounded-xl bg-slate-950/90 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-500 transition-colors"
+                />
+                <input
+                  type="text"
+                  value={youtubeInputTitle}
+                  onChange={(e) => setYoutubeInputTitle(e.target.value)}
+                  placeholder="Station title (optional)"
+                  className="px-3.5 py-2.5 rounded-xl bg-slate-950/90 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-500 transition-colors"
+                />
+              </div>
+
+              {youtubeError && (
+                <div className="text-xs text-rose-400 font-medium">{youtubeError}</div>
+              )}
+
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[11px] text-slate-500 font-mono">
+                  Supports standard watch links, playlists (&amp;list=...), and shorts
+                </span>
+                <button
+                  type="submit"
+                  className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-semibold flex items-center gap-2 cursor-pointer shadow-md transition-colors"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>Start &amp; Save Stream</span>
+                </button>
+              </div>
+            </form>
           </div>
 
-          {audio.customTracks.length === 0 ? (
-            <div className="py-12 px-4 rounded-2xl bg-slate-950/60 border border-dashed border-slate-800 text-center space-y-3">
-              <div className="w-12 h-12 rounded-2xl bg-indigo-500/15 border border-indigo-500/30 flex items-center justify-center text-2xl mx-auto">
-                🎵
+          {/* Curated YouTube Focus Streams */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">
+                Curated Focus &amp; Coding Streams
+              </h4>
+              <span className="text-xs text-slate-500">1-click to start</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {[
+                {
+                  id: 'jfKfPfyJRdk',
+                  title: 'Lofi Girl — Beats to Relax / Study to',
+                  channel: 'Lofi Girl · 24/7 Live',
+                  tag: 'LOFI',
+                },
+                {
+                  id: 'kYJqD96JjF0',
+                  title: 'Minecraft Ambience & Music Extended',
+                  channel: 'C418 & Lena Raine',
+                  tag: 'AMBIENT',
+                },
+                {
+                  id: '4xDzrJKXOOY',
+                  title: 'Synthwave / Chillwave Coding Beats',
+                  channel: 'ChillSynth FM',
+                  tag: 'SYNTH',
+                },
+                {
+                  id: 'lTRiuFIWV54',
+                  title: 'Rainy Cafe & Gentle Jazz Study',
+                  channel: 'Cafe Music BGM',
+                  tag: 'RAIN & JAZZ',
+                },
+                {
+                  id: '7NOSDKb0HlU',
+                  title: 'Deep Focus Classical Piano',
+                  channel: 'HalidonMusic',
+                  tag: 'CLASSICAL',
+                },
+                {
+                  id: 'WPni755-Krg',
+                  title: 'Midnight Cozy Library Ambient',
+                  channel: 'Calmed by Nature',
+                  tag: 'LIBRARY',
+                },
+              ].map((item) => {
+                const isSelected = audio.activeYouTubeId === item.id;
+                return (
+                  <div
+                    key={item.id}
+                    onClick={() => {
+                      onUpdateAudio({
+                        activeYouTubeId: item.id,
+                        activeSpotifyUri: null,
+                        activeSource: 'youtube',
+                        isPlaying: true,
+                      });
+                      setStatusMessage(`✓ Now playing: ${item.title}`);
+                      window.setTimeout(() => setStatusMessage(null), 3000);
+                    }}
+                    className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between group ${
+                      isSelected
+                        ? 'border-red-500/60 bg-red-500/10 shadow-lg'
+                        : 'border-slate-800 bg-slate-900/60 hover:bg-slate-800/80 hover:border-slate-700'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
+                          {item.tag}
+                        </span>
+                        {isSelected && (
+                          <span className="text-[10px] font-bold text-red-400 flex items-center gap-1 font-mono">
+                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
+                            ACTIVE
+                          </span>
+                        )}
+                      </div>
+                      <h5 className="text-sm font-semibold text-white group-hover:text-red-300 transition-colors line-clamp-2">
+                        {item.title}
+                      </h5>
+                      <p className="text-xs text-slate-400 mt-1">{item.channel}</p>
+                    </div>
+
+                    <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between text-xs text-red-400 font-medium">
+                      <span>{isSelected ? 'Currently Playing' : 'Play Stream'}</span>
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 4. TAB CONTENT: SPOTIFY */}
+      {activeTab === 'spotify' && (
+        <div className="space-y-6">
+          {/* Add Spotify URL Card */}
+          <div
+            className="p-5 sm:p-6 rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-md shadow-xl"
+            style={panelBgStyle}
+          >
+            <div className="flex items-center gap-2 mb-3">
+              <Radio className="w-5 h-5 text-emerald-400" />
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                Spotify Focus Integration
+              </h3>
+            </div>
+            <p className="text-xs text-slate-400 mb-4 leading-relaxed">
+              Embed any Spotify playlist, album, or track. Spotify playback operates safely through the official Spotify embed.
+              Logged-in Spotify users enjoy full tracks; free/guest users hear official 30s previews per Spotify policy.
+            </p>
+
+            <form onSubmit={handleAddSpotifyUrl} className="space-y-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                <input
+                  type="text"
+                  value={spotifyInputUrl}
+                  onChange={(e) => setSpotifyInputUrl(e.target.value)}
+                  placeholder="https://open.spotify.com/playlist/..."
+                  className="sm:col-span-2 px-3.5 py-2.5 rounded-xl bg-slate-950/90 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
+                />
+                <input
+                  type="text"
+                  value={spotifyInputTitle}
+                  onChange={(e) => setSpotifyInputTitle(e.target.value)}
+                  placeholder="Playlist title (optional)"
+                  className="px-3.5 py-2.5 rounded-xl bg-slate-950/90 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
+                />
               </div>
-              <div className="text-sm font-semibold text-white">
-                Your personal music library is empty
+
+              {spotifyError && (
+                <div className="text-xs text-rose-400 font-medium">{spotifyError}</div>
+              )}
+
+              <div className="flex items-center justify-between pt-1">
+                <span className="text-[11px] text-slate-500 font-mono">
+                  Paste links from Spotify Web or Desktop app
+                </span>
+                <button
+                  type="submit"
+                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-2 cursor-pointer shadow-md transition-colors"
+                >
+                  <Play className="w-3.5 h-3.5 fill-current" />
+                  <span>Mount &amp; Save Spotify</span>
+                </button>
               </div>
-              <p className="text-xs text-slate-400 max-w-md mx-auto leading-relaxed">
-                Import multiple MP3, WAV, OGG, FLAC, or M4A songs at once—or
-                select an entire music folder from your computer. All tracks are
-                saved locally and work 100% offline.
-              </p>
-              <div className="flex justify-center gap-2 pt-1">
+            </form>
+          </div>
+
+          {/* Curated Spotify Playlists */}
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">
+                Curated Spotify Focus Playlists
+              </h4>
+              <span className="text-xs text-slate-500">Official Spotify links</span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+              {[
+                {
+                  uri: 'playlist/37i9dQZF1DWZeKCadgRdKQ',
+                  title: 'Deep Focus',
+                  desc: 'Keep calm and focus with ambient and post-rock music.',
+                },
+                {
+                  uri: 'playlist/37i9dQZF1DXdLEN7aqioXM',
+                  title: 'Lofi Beats',
+                  desc: 'Beats to relax, study, and focus to.',
+                },
+                {
+                  uri: 'playlist/37i9dQZF1DX4sWSpwq3LiO',
+                  title: 'Peaceful Piano',
+                  desc: 'Peaceful piano to help you slow down, breathe, and focus.',
+                },
+                {
+                  uri: 'playlist/37i9dQZF1DX3Ogo9pFvBkY',
+                  title: 'Ambient Chill',
+                  desc: 'Atmospheric electronic landscapes and chilled beats.',
+                },
+                {
+                  uri: 'playlist/37i9dQZF1DX8Uebhn9wzrS',
+                  title: 'Chill Lofi Study',
+                  desc: 'The best instrumental beats for study sessions.',
+                },
+                {
+                  uri: 'playlist/37i9dQZF1DWWQRwui0ExPn',
+                  title: 'Lo-Fi Cafe',
+                  desc: 'Cozy coffeehouse beats to study or read with.',
+                },
+              ].map((item) => {
+                const isSelected = audio.activeSpotifyUri === item.uri;
+                return (
+                  <div
+                    key={item.uri}
+                    onClick={() => {
+                      onUpdateAudio({
+                        activeSpotifyUri: item.uri,
+                        activeYouTubeId: null,
+                        activeSource: 'spotify',
+                        isPlaying: true,
+                      });
+                      setStatusMessage(`✓ Mounted Spotify playlist: ${item.title}`);
+                      window.setTimeout(() => setStatusMessage(null), 3000);
+                    }}
+                    className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between group ${
+                      isSelected
+                        ? 'border-emerald-500/60 bg-emerald-500/10 shadow-lg'
+                        : 'border-slate-800 bg-slate-900/60 hover:bg-slate-800/80 hover:border-slate-700'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2">
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-emerald-300">
+                          SPOTIFY
+                        </span>
+                        {isSelected && (
+                          <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1 font-mono">
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                            ACTIVE
+                          </span>
+                        )}
+                      </div>
+                      <h5 className="text-sm font-semibold text-white group-hover:text-emerald-300 transition-colors">
+                        {item.title}
+                      </h5>
+                      <p className="text-xs text-slate-400 mt-1">{item.desc}</p>
+                    </div>
+
+                    <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between text-xs text-emerald-400 font-medium">
+                      <span>{isSelected ? 'Loaded in Player' : 'Open in Player'}</span>
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 5. TAB CONTENT: PERSONAL LIBRARY */}
+      {activeTab === 'library' && (
+        <div className="space-y-6">
+          <div
+            className="p-5 sm:p-6 rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-md shadow-xl"
+            style={panelBgStyle}
+          >
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
+                  Personal Offline Audio Files
+                </h3>
+                <p className="text-xs text-slate-400">
+                  Import local MP3 or WAV files for your focus session. Files remain 100% on your machine.
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
                 <button
                   type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="px-4 py-2 rounded-xl text-xs font-semibold text-white cursor-pointer"
-                  style={{ backgroundColor: styleSettings.accentColor }}
+                  disabled={uploadingMedia}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow transition-colors"
                 >
-                  + Import Music Files
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>+ Import Files</span>
                 </button>
+                <input
+                  ref={fileInputRef}
+                  type="file"
+                  accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a"
+                  multiple
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
+
                 <button
                   type="button"
                   onClick={() => folderInputRef.current?.click()}
-                  className="px-4 py-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700 text-xs text-slate-200 cursor-pointer"
+                  disabled={uploadingMedia}
+                  className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
-                  + Import Music Folder
+                  <FolderOpen className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>+ Folder</span>
                 </button>
+                <input
+                  ref={folderInputRef}
+                  type="file"
+                  accept="audio/*,.mp3,.wav,.ogg,.flac"
+                  multiple
+                  {...({
+                    webkitdirectory: '',
+                    directory: '',
+                  } as React.InputHTMLAttributes<HTMLInputElement>)}
+                  onChange={handleFileUpload}
+                  className="hidden"
+                />
               </div>
             </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              {allTracks
-                .filter((t) => t.isCustom)
-                .map((item) => renderTrackRow(item))}
-            </div>
-          )}
-        </section>
-      )}
 
-      {subTab === 'playlists' && (
-        <section
-          className="rounded-2xl border border-slate-800/90 p-5 shadow-xl space-y-5"
-          style={panelBgStyle}
-        >
-          {/* Create New Playlist Bar */}
-          <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800/90 flex flex-col md:flex-row items-stretch md:items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-bold text-white">
-                Curated &amp; Custom Playlists
-              </h2>
-              <p className="text-xs text-slate-400">
-                Play a themed study playlist or build your own custom queue
-              </p>
-            </div>
-            <div className="flex flex-wrap items-center gap-2">
-              <input
-                type="text"
-                value={newPlaylistName}
-                onChange={(e) => setNewPlaylistName(e.target.value)}
-                placeholder="New playlist name..."
-                className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white"
-              />
-              <input
-                type="text"
-                value={newPlaylistDesc}
-                onChange={(e) => setNewPlaylistDesc(e.target.value)}
-                placeholder="Short description (optional)"
-                className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white"
-              />
-              <button
-                type="button"
-                onClick={handleCreatePlaylist}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
-                style={{ backgroundColor: styleSettings.accentColor }}
-              >
-                <Plus className="w-3.5 h-3.5" />
-                <span>Create Playlist</span>
-              </button>
-            </div>
-          </div>
-
-          {/* Playlist Cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-            {playlists.map((pl) => {
-              const isSelected = selectedPlaylistId === pl.id;
-              const isPlayingPlaylist = audio.activePlaylistId === pl.id;
-              return (
-                <div
-                  key={pl.id}
-                  onClick={() => setSelectedPlaylistId(pl.id)}
-                  role="button"
-                  tabIndex={0}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter') setSelectedPlaylistId(pl.id);
-                  }}
-                  className={`p-4 rounded-2xl border transition-all cursor-pointer flex flex-col justify-between gap-3 ${
-                    isSelected
-                      ? 'bg-indigo-600/20 border-indigo-400 text-white shadow-lg'
-                      : 'bg-slate-900/70 border-slate-800/90 text-slate-300 hover:border-slate-700'
-                  }`}
-                >
-                  <div>
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-xl">{pl.icon || '🎵'}</span>
-                      <div className="flex items-center gap-1">
-                        {isPlayingPlaylist && (
-                          <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-500/40 text-emerald-300 text-[10px] font-semibold">
-                            Active Queue
-                          </span>
-                        )}
-                        {!pl.isBuiltIn && (
-                          <button
-                            type="button"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              handleDeletePlaylist(pl.id);
-                            }}
-                            className="p-1 text-slate-400 hover:text-rose-400 cursor-pointer"
-                            title="Delete playlist"
-                          >
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                    <h3 className="text-sm font-bold text-white mt-2">
-                      {pl.name}
-                    </h3>
-                    <p className="text-[11px] text-slate-400 line-clamp-2 mt-0.5">
-                      {pl.description}
-                    </p>
-                  </div>
-
-                  <div className="flex items-center justify-between pt-2 border-t border-white/10">
-                    <span className="text-[11px] font-mono-tabular text-slate-400">
-                      {pl.trackIds.length} tracks
-                    </span>
-                    <button
-                      type="button"
-                      onClick={async (e) => {
-                        e.stopPropagation();
-                        await soundEngine.resumeContextManually();
-                        const firstTrack =
-                          pl.trackIds[0] || 'bundled_velvet_rain_lofi';
-                        onSelectTrack(firstTrack, pl.id);
-                      }}
-                      className="px-2.5 py-1 rounded-lg bg-indigo-500 hover:bg-indigo-400 text-white text-[11px] font-semibold flex items-center gap-1 cursor-pointer"
-                    >
-                      <Play className="w-3 h-3 fill-current" />
-                      <span>Play</span>
-                    </button>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-
-          {/* Selected Playlist Track Manager */}
-          {(() => {
-            const activePl =
-              playlists.find((p) => p.id === selectedPlaylistId) ||
-              playlists[0];
-            if (!activePl) return null;
-            const playlistTracks = activePl.trackIds
-              .map((id) => allTracks.find((t) => t.id === id))
-              .filter((t): t is UnifiedLibraryTrack => Boolean(t));
-
-            return (
-              <div className="p-4 rounded-2xl bg-slate-950/65 border border-slate-800 space-y-4">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-white">
-                      {activePl.icon || '🎵'} {activePl.name} — Track Queue (
-                      {playlistTracks.length})
-                    </h3>
-                    <p className="text-xs text-slate-400">
-                      Click any track below to play within this playlist, or
-                      toggle tracks to customize the queue
-                    </p>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      await soundEngine.resumeContextManually();
-                      if (playlistTracks.length > 0) {
-                        onSelectTrack(playlistTracks[0].id, activePl.id);
-                      }
-                    }}
-                    className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
-                    style={{ backgroundColor: styleSettings.accentColor }}
-                  >
-                    <Play className="w-3.5 h-3.5 fill-current" />
-                    <span>Play Entire Playlist</span>
-                  </button>
-                </div>
-
-                {playlistTracks.length === 0 ? (
-                  <p className="text-xs text-slate-400 py-4 text-center">
-                    No tracks in this playlist yet. Click any track chip below
-                    to add it!
-                  </p>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-                    {playlistTracks.map((item) =>
-                      renderTrackRow(item, { playlistContextId: activePl.id })
-                    )}
-                  </div>
-                )}
-
-                {/* Add/Remove Tracks in Playlist */}
-                <div className="pt-3 border-t border-slate-800/80">
-                  <div className="text-xs font-semibold text-slate-300 mb-2">
-                    Add or Remove Library Tracks in &ldquo;{activePl.name}&rdquo;:
-                  </div>
-                  <div className="flex flex-wrap gap-1.5">
-                    {allTracks.map((tr) => {
-                      const included = activePl.trackIds.includes(tr.id);
-                      return (
-                        <button
-                          key={tr.id}
-                          type="button"
-                          onClick={() =>
-                            handleToggleTrackInPlaylist(activePl.id, tr.id)
-                          }
-                          className={`px-2.5 py-1 rounded-lg text-[11px] border flex items-center gap-1 transition-colors cursor-pointer ${
-                            included
-                              ? 'bg-indigo-500/25 border-indigo-400 text-white font-medium'
-                              : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
-                          }`}
-                        >
-                          {included ? (
-                            <Check className="w-3 h-3 text-indigo-300" />
-                          ) : (
-                            <Plus className="w-3 h-3" />
-                          )}
-                          <span>{tr.title}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
-                </div>
-              </div>
-            );
-          })()}
-        </section>
-      )}
-
-      {subTab === 'ambient' && (
-        <section
-          className="rounded-2xl border border-slate-800/90 p-5 shadow-xl space-y-5"
-          style={panelBgStyle}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-bold text-white">
-                Ambient Environment Soundscapes &amp; Custom Mixes
-              </h2>
-              <p className="text-xs text-slate-400">
-                Layer continuous procedural rain, forest, fireplace, café, or
-                ocean waves underneath your music—or listen solo
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={async () => {
-                await soundEngine.resumeContextManually();
-                onUpdateAudio({
-                  ambientPlaying: !isAmbientActive,
-                  ambientSoundId:
-                    audio.ambientSoundId === 'silent'
-                      ? 'rain'
-                      : audio.ambientSoundId,
-                });
-              }}
-              className={`px-4 py-2 rounded-xl text-xs font-semibold flex items-center gap-2 cursor-pointer border ${
-                isAmbientActive
-                  ? 'bg-emerald-500/20 border-emerald-400 text-emerald-200'
-                  : 'bg-slate-900 border-slate-700 text-slate-200 hover:text-white'
-              }`}
-            >
-              <Radio className="w-4 h-4" />
-              <span>
-                {isAmbientActive
-                  ? 'Ambient Soundscape: ACTIVE'
-                  : 'Start Ambient Soundscape'}
-              </span>
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
-            {AMBIENT_SOUNDS.map((snd) => {
-              const selected = audio.ambientSoundId === snd.id;
-              return (
-                <button
-                  key={snd.id}
-                  type="button"
-                  onClick={async () => {
-                    await soundEngine.resumeContextManually();
-                    onUpdateAudio({
-                      ambientSoundId: snd.id,
-                      ambientPlaying: snd.id !== 'silent',
-                    });
-                  }}
-                  className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-                    selected
-                      ? 'bg-emerald-500/20 border-emerald-400 text-white shadow-md'
-                      : 'bg-slate-900/70 border-slate-800 text-slate-300 hover:border-slate-700'
-                  }`}
-                >
-                  <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-white">
-                      {snd.name}
-                    </span>
-                    {selected && isAmbientActive && (
-                      <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                    )}
-                  </div>
-                  <p className="text-[11px] text-slate-400 mt-1">
-                    {snd.description}
-                  </p>
-                </button>
-              );
-            })}
-          </div>
-
-          {/* Saved Music + Ambient Mixer Presets */}
-          <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800 space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div>
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider">
-                  Saved Soundscape + Music Mix Presets
-                </h3>
-                <p className="text-[11px] text-slate-400">
-                  Save your favorite combination of Music Track + Ambient Sound
-                  + Volume balance
+            {audio.customTracks.length === 0 ? (
+              <div className="p-8 rounded-xl border border-dashed border-slate-800 text-center">
+                <Music className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+                <h5 className="text-sm font-semibold text-slate-300">
+                  No personal files imported yet
+                </h5>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
+                  Click &quot;+ Import Files&quot; above to add your own offline audio files for local study sessions.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={newMixPresetName}
-                  onChange={(e) => setNewMixPresetName(e.target.value)}
-                  placeholder="Mix preset name..."
-                  className="px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-800 text-xs text-white"
-                />
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (!newMixPresetName.trim()) return;
-                    const nextPreset: AudioPreset = {
-                      id: `mix_${Date.now()}`,
-                      name: newMixPresetName.trim(),
-                      musicTrackId: audio.currentTrackId,
-                      musicVolume: audio.musicVolume,
-                      ambientSoundId: audio.ambientSoundId,
-                      ambientVolume: audio.ambientVolume,
-                    };
-                    onUpdateAudio({
-                      audioPresets: [
-                        ...(audio.audioPresets || []),
-                        nextPreset,
-                      ],
-                    });
-                    setNewMixPresetName('');
-                  }}
-                  className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold cursor-pointer"
-                >
-                  + Save Current Mix
-                </button>
+            ) : (
+              <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+                {audio.customTracks.map((item) => (
+                  <div
+                    key={item.id}
+                    className="p-3 rounded-xl border border-slate-800 bg-slate-950/60 flex items-center justify-between gap-3"
+                  >
+                    <div className="flex items-center gap-3 min-w-0">
+                      <Music className="w-4 h-4 text-indigo-400 shrink-0" />
+                      <div className="min-w-0">
+                        <div className="text-xs font-semibold text-white truncate">
+                          {item.name}
+                        </div>
+                        <div className="text-[10px] text-slate-500 font-mono">
+                          {item.folderName || 'Local File'}
+                        </div>
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const next = audio.customTracks.filter((t) => t.id !== item.id);
+                        onUpdateAudio({ customTracks: next });
+                      }}
+                      className="p-1 rounded text-slate-500 hover:text-rose-400 cursor-pointer"
+                      title="Remove track"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* 6. TAB CONTENT: SAVED STREAMS */}
+      {activeTab === 'saved' && (
+        <div className="space-y-6">
+          <div
+            className="p-5 sm:p-6 rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-md shadow-xl"
+            style={panelBgStyle}
+          >
+            <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono mb-4">
+              Saved Streams &amp; Playlists
+            </h3>
+
+            <div className="space-y-4">
+              {/* YouTube Saved Items */}
+              <div>
+                <h4 className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5">
+                  <Youtube className="w-3.5 h-3.5 text-red-500" />
+                  <span>YouTube Streams ({audio.youtubeItems?.length || 0})</span>
+                </h4>
+
+                {(audio.youtubeItems || []).length === 0 ? (
+                  <p className="text-xs text-slate-500 italic">No custom YouTube streams saved yet.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {audio.youtubeItems?.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-3 rounded-xl border border-slate-800 bg-slate-950/60 flex items-center justify-between gap-2"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onUpdateAudio({
+                              activeYouTubeId: item.embedId,
+                              activeSpotifyUri: null,
+                              activeSource: 'youtube',
+                              isPlaying: true,
+                            })
+                          }
+                          className="flex items-center gap-2 min-w-0 text-left cursor-pointer flex-1"
+                        >
+                          <Play className="w-3.5 h-3.5 text-red-400 shrink-0 fill-current" />
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-white truncate">
+                              {item.title}
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-mono">
+                              {item.type.toUpperCase()}
+                            </div>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = (audio.youtubeItems || []).filter((y) => y.id !== item.id);
+                            onUpdateAudio({ youtubeItems: next });
+                          }}
+                          className="p-1 rounded text-slate-500 hover:text-rose-400 cursor-pointer"
+                          title="Remove saved stream"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+
+              {/* Spotify Saved Items */}
+              <div className="pt-2 border-t border-slate-800/80">
+                <h4 className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5">
+                  <Radio className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Spotify Playlists ({audio.spotifyItems?.length || 0})</span>
+                </h4>
+
+                {(audio.spotifyItems || []).length === 0 ? (
+                  <p className="text-xs text-slate-500 italic">No custom Spotify playlists saved yet.</p>
+                ) : (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                    {audio.spotifyItems?.map((item) => (
+                      <div
+                        key={item.id}
+                        className="p-3 rounded-xl border border-slate-800 bg-slate-950/60 flex items-center justify-between gap-2"
+                      >
+                        <button
+                          type="button"
+                          onClick={() =>
+                            onUpdateAudio({
+                              activeSpotifyUri: item.embedUri,
+                              activeYouTubeId: null,
+                              activeSource: 'spotify',
+                              isPlaying: true,
+                            })
+                          }
+                          className="flex items-center gap-2 min-w-0 text-left cursor-pointer flex-1"
+                        >
+                          <Play className="w-3.5 h-3.5 text-emerald-400 shrink-0 fill-current" />
+                          <div className="min-w-0">
+                            <div className="text-xs font-semibold text-white truncate">
+                              {item.title}
+                            </div>
+                            <div className="text-[10px] text-slate-500 font-mono">
+                              {item.type.toUpperCase()}
+                            </div>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const next = (audio.spotifyItems || []).filter((s) => s.id !== item.id);
+                            onUpdateAudio({ spotifyItems: next });
+                          }}
+                          className="p-1 rounded text-slate-500 hover:text-rose-400 cursor-pointer"
+                          title="Remove saved playlist"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
-
-            <div className="flex flex-wrap gap-2">
-              {(audio.audioPresets || []).map((ap) => (
-                <button
-                  key={ap.id}
-                  type="button"
-                  onClick={async () => {
-                    await soundEngine.resumeContextManually();
-                    onUpdateAudio({
-                      currentTrackId: ap.musicTrackId,
-                      musicVolume: ap.musicVolume,
-                      ambientSoundId: ap.ambientSoundId,
-                      ambientVolume: ap.ambientVolume,
-                      isPlaying: true,
-                      ambientPlaying: ap.ambientSoundId !== 'silent',
-                    });
-                  }}
-                  className="px-3 py-2 rounded-xl bg-slate-900 hover:bg-indigo-500/20 border border-slate-800 hover:border-indigo-400 text-xs font-medium text-slate-200 transition-colors cursor-pointer flex items-center gap-2"
-                >
-                  <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>{ap.name}</span>
-                  <span className="text-[10px] text-slate-400 font-mono-tabular">
-                    ({ap.musicVolume}% / {ap.ambientVolume}%)
-                  </span>
-                </button>
-              ))}
-            </div>
           </div>
-        </section>
-      )}
-
-      {subTab === 'focus' && (
-        <section
-          className="rounded-2xl border border-slate-800/90 p-5 shadow-xl space-y-4"
-          style={panelBgStyle}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h2 className="text-sm font-bold text-white">
-                Focus Music &amp; Deep Work Acoustics
-              </h2>
-              <p className="text-xs text-slate-400">
-                Tracks engineered for concentration, Pomodoro study blocks, and
-                distraction-free flow
-              </p>
-            </div>
-
-            <label className="flex items-center gap-2 px-3 py-2 rounded-xl bg-slate-950/80 border border-slate-800 text-xs text-slate-200 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={Boolean(audio.autoSwitchMusicWithScene)}
-                onChange={(e) =>
-                  onUpdateAudio({
-                    autoSwitchMusicWithScene: e.target.checked,
-                  })
-                }
-                className="accent-indigo-500"
-              />
-              <span>Auto-switch music when changing Pixel Scene</span>
-            </label>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-            {allTracks
-              .filter(
-                (t) =>
-                  t.category === 'focus' ||
-                  t.category === 'instrumental' ||
-                  t.category === 'rain'
-              )
-              .map((item) => renderTrackRow(item))}
-          </div>
-        </section>
-      )}
-
-      {subTab === 'recent' && (
-        <section
-          className="rounded-2xl border border-slate-800/90 p-5 shadow-xl space-y-4"
-          style={panelBgStyle}
-        >
-          <div className="flex items-center justify-between">
-            <div>
-              <h2 className="text-sm font-bold text-white">
-                Recently Played Tracks ({recentlyPlayed.length})
-              </h2>
-              <p className="text-xs text-slate-400">
-                Quickly jump back to tracks from your recent focus sessions
-              </p>
-            </div>
-            {recentlyPlayed.length > 0 && (
-              <button
-                type="button"
-                onClick={() => onUpdateAudio({ recentlyPlayed: [] })}
-                className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-400 hover:text-white cursor-pointer"
-              >
-                Clear History
-              </button>
-            )}
-          </div>
-
-          {recentlyPlayed.length === 0 ? (
-            <div className="py-10 px-4 rounded-2xl bg-slate-950/60 border border-dashed border-slate-800 text-center text-xs text-slate-400">
-              No tracks played in this history yet. Click Play on any track in
-              the Music Library to start building your listening history.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              {recentlyPlayed
-                .map((entry) => {
-                  const found = allTracks.find((t) => t.id === entry.trackId);
-                  return found ? { track: found, playedAt: entry.playedAt } : null;
-                })
-                .filter(
-                  (
-                    x
-                  ): x is { track: UnifiedLibraryTrack; playedAt: string } =>
-                    Boolean(x)
-                )
-                .map(({ track, playedAt }) =>
-                  renderTrackRow(track, { playedAtLabel: playedAt })
-                )}
-            </div>
-          )}
-        </section>
-      )}
-
-      {subTab === 'favorites' && (
-        <section
-          className="rounded-2xl border border-slate-800/90 p-5 shadow-xl space-y-4"
-          style={panelBgStyle}
-        >
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-sm font-bold text-white">
-                Saved Favorite Tracks ({favoriteIds.length})
-              </h2>
-              <p className="text-xs text-slate-400">
-                Starred bundled and personal tracks for instant access
-              </p>
-            </div>
-            {favoriteIds.length > 0 && (
-              <button
-                type="button"
-                onClick={async () => {
-                  await soundEngine.resumeContextManually();
-                  onUpdateAudio({ activeCategory: 'favorites' });
-                  onSelectTrack(favoriteIds[0], null);
-                }}
-                className="px-3.5 py-1.5 rounded-xl text-xs font-semibold text-white flex items-center gap-1.5 cursor-pointer"
-                style={{ backgroundColor: styleSettings.accentColor }}
-              >
-                <Play className="w-3.5 h-3.5 fill-current" />
-                <span>Play All Favorites</span>
-              </button>
-            )}
-          </div>
-
-          {favoriteIds.length === 0 ? (
-            <div className="py-10 px-4 rounded-2xl bg-slate-950/60 border border-dashed border-slate-800 text-center text-xs text-slate-400">
-              Click the ★ star icon on any track in the Music Library or Now
-              Playing bar to save it to your Favorites.
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-2.5">
-              {allTracks
-                .filter((t) => favoriteIds.includes(t.id))
-                .map((item) => renderTrackRow(item))}
-            </div>
-          )}
-        </section>
+        </div>
       )}
     </div>
   );

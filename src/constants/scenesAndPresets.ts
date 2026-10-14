@@ -1,4 +1,5 @@
 import {
+  AmbientMoodId,
   AmbientSoundId,
   AppDataState,
   Habit,
@@ -573,6 +574,104 @@ export const DEFAULT_PLAYLISTS: UserPlaylist[] = [
       'cyber_chill',
     ],
     isBuiltIn: true,
+  },
+];
+
+export interface AmbientMoodConfig {
+  id: AmbientMoodId;
+  name: string;
+  tagline: string;
+  icon: string;
+  description: string;
+  associatedTracks: string[];
+  recommendedAmbient: AmbientSoundId;
+  themeColor: string;
+}
+
+export const AMBIENT_MOODS: AmbientMoodConfig[] = [
+  {
+    id: 'peaceful_exploration',
+    name: 'Peaceful Exploration',
+    tagline: 'Minecraft-inspired daytime adventure',
+    icon: '🧭',
+    description: 'Acoustic pluckings, sunny hill breezes, and peaceful overworld serenity',
+    associatedTracks: [
+      'bundled_lantern_acoustic_arp',
+      'bundled_forest_breeze_harmonic',
+      'cozy_guitar',
+    ],
+    recommendedAmbient: 'forest',
+    themeColor: '#10b981',
+  },
+  {
+    id: 'rainy_forest',
+    name: 'Rainy Forest',
+    tagline: 'Velvet drops on oak canopy',
+    icon: '🌧️',
+    description: 'Soft electric piano, gentle rain droplets, and mossy pine stillness',
+    associatedTracks: [
+      'bundled_velvet_rain_lofi',
+      'lofi_rain',
+      'bundled_forest_breeze_harmonic',
+    ],
+    recommendedAmbient: 'rain',
+    themeColor: '#38bdf8',
+  },
+  {
+    id: 'underground_cave',
+    name: 'Underground Cave',
+    tagline: 'Deep stone echo & warm torches',
+    icon: '⛏️',
+    description: 'Resonant low hearth drones, subterranean stone stillness, and glowing minerals',
+    associatedTracks: [
+      'bundled_cozy_hearth_drone',
+      'bundled_deep_work_pulse',
+      'midnight_synth',
+    ],
+    recommendedAmbient: 'brown_noise',
+    themeColor: '#f59e0b',
+  },
+  {
+    id: 'night_sky',
+    name: 'Night Sky',
+    tagline: 'Starlight drift & celestial shimmer',
+    icon: '🌌',
+    description: 'Evolving celestial pads, twinkling astral harmonics, and quiet midnight horizons',
+    associatedTracks: [
+      'bundled_starlight_drift_pad',
+      'ambient_piano',
+      'midnight_synth',
+    ],
+    recommendedAmbient: 'nature_night',
+    themeColor: '#818cf8',
+  },
+  {
+    id: 'cozy_library',
+    name: 'Cozy Library',
+    tagline: 'Felt piano & worn parchment',
+    icon: '📖',
+    description: 'Intimate felt piano nocturnes, ticking grandfather clock, and late study serenity',
+    associatedTracks: [
+      'bundled_nocturne_felt_piano',
+      'ambient_piano',
+      'bundled_midnight_study_chords',
+    ],
+    recommendedAmbient: 'fireplace',
+    themeColor: '#f43f5e',
+  },
+  {
+    id: 'deep_focus',
+    name: 'Deep Focus',
+    tagline: 'Binaural pulse & uninterrupted flow',
+    icon: '🧘',
+    description: 'Minimal harmonic pulses, deep work frequencies, and alpha-wave concentration',
+    associatedTracks: [
+      'bundled_deep_work_pulse',
+      'cyber_chill',
+      'bundled_midnight_study_chords',
+    ],
+    recommendedAmbient: 'white_noise',
+    themeColor: '#a855f7',
   },
 ];
 
@@ -1181,6 +1280,54 @@ export function createDefaultAppState(): AppDataState {
       playlists: DEFAULT_PLAYLISTS,
       activePlaylistId: null,
       recentlyPlayed: [],
+      activeSource: 'ambient',
+      selectedMood: 'peaceful_exploration',
+      sleepTimerMinutes: null,
+      sleepTimerEndTimestamp: null,
+      crossfadeEnabled: true,
+      autoStartOnLaunch: false,
+      continueBetweenPages: true,
+      youtubeItems: [
+        {
+          id: 'yt_lofi_girl',
+          title: 'Lofi Girl — Beats to Relax / Study to',
+          url: 'https://www.youtube.com/watch?v=jfKfPfyJRdk',
+          embedId: 'jfKfPfyJRdk',
+          type: 'video',
+          addedAt: '2026-10-14',
+        },
+        {
+          id: 'yt_minecraft_ambient',
+          title: 'C418 & Lena Raine Minecraft Ambience Extended',
+          url: 'https://www.youtube.com/watch?v=kYJqD96JjF0',
+          embedId: 'kYJqD96JjF0',
+          type: 'video',
+          addedAt: '2026-10-14',
+        },
+      ],
+      activeYouTubeId: 'jfKfPfyJRdk',
+      spotifyItems: [
+        {
+          id: 'sp_deep_focus',
+          title: 'Deep Focus — Instrumental Ambient',
+          url: 'https://open.spotify.com/playlist/37i9dQZF1DWZeKCadgRdKQ',
+          embedUri: 'playlist/37i9dQZF1DWZeKCadgRdKQ',
+          type: 'playlist',
+          addedAt: '2026-10-14',
+        },
+        {
+          id: 'sp_lofi_beats',
+          title: 'Lofi Beats — Chill Study Session',
+          url: 'https://open.spotify.com/playlist/37i9dQZF1DXdLEN7aqioXM',
+          embedUri: 'playlist/37i9dQZF1DXdLEN7aqioXM',
+          type: 'playlist',
+          addedAt: '2026-10-14',
+        },
+      ],
+      activeSpotifyUri: 'playlist/37i9dQZF1DWZeKCadgRdKQ',
+      spotifyClientId: '',
+      activeVideoTrackId: null,
+      playIntroOnStartup: true,
       audioPresets: [
         {
           id: 'preset_audio_rainy_study',

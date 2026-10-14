@@ -161,9 +161,28 @@ export const RightWorkspaceColumn: React.FC<RightWorkspaceColumnProps> = ({
     allLibraryTracks.find((t) => t.id === audio.currentTrackId) ||
     allLibraryTracks[0];
 
-  const trackTitle = activeUnifiedTrack?.title || 'Velvet Rain Lo-Fi';
+  const activeVideo = audio.activeVideoTrackId
+    ? audio.customTracks.find((t) => t.id === audio.activeVideoTrackId)
+    : null;
+
+  const trackTitle =
+    audio.activeSource === 'youtube'
+      ? audio.youtubeItems?.find((y) => y.embedId === audio.activeYouTubeId)?.title || 'YouTube Stream'
+      : audio.activeSource === 'spotify'
+      ? audio.spotifyItems?.find((s) => s.embedUri === audio.activeSpotifyUri)?.title || 'Spotify Stream'
+      : activeVideo
+      ? activeVideo.name
+      : activeUnifiedTrack?.title || 'Velvet Rain Lo-Fi';
+
   const trackSubtitle =
-    activeUnifiedTrack?.subtitle || 'Bundled CC0 WAV · public/music/rain/';
+    audio.activeSource === 'youtube'
+      ? 'YouTube Embedded Stream'
+      : audio.activeSource === 'spotify'
+      ? 'Spotify Embedded Stream'
+      : activeVideo
+      ? 'Personal Local Video'
+      : activeUnifiedTrack?.subtitle || 'Bundled CC0 WAV · public/music/rain/';
+
   const coverScene =
     PIXEL_SCENES.find((s) => s.imageUrl === activeUnifiedTrack?.coverImageUrl) ||
     PIXEL_SCENES[0];
@@ -173,28 +192,17 @@ export const RightWorkspaceColumn: React.FC<RightWorkspaceColumnProps> = ({
     if (!files || files.length === 0) return;
 
     const fileList = Array.from(files);
-    const audioFiles = fileList.filter(
+    const mediaFiles = fileList.filter(
       (f) =>
         f.type.startsWith('audio/') ||
-        /\.(mp3|wav|ogg|flac|m4a|aac|webm)$/i.test(f.name)
+        f.type.startsWith('video/') ||
+        /\.(mp3|wav|ogg|flac|m4a|aac|webm|mp4|mov|m4v)$/i.test(f.name)
     );
 
-    const videoOnlyFiles = fileList.filter(
-      (f) =>
-        (f.type.startsWith('video/') || /\.(mp4|mov)$/i.test(f.name)) &&
-        !/\.(webm)$/i.test(f.name)
-    );
-
-    if (audioFiles.length === 0) {
-      if (videoOnlyFiles.length > 0) {
-        setUploadStatusMsg(
-          `⚠ "${videoOnlyFiles[0].name}" is a video file. To use videos as Realm Portal backgrounds, upload it in "Customize Space > Custom Backdrop".`
-        );
-      } else {
-        setUploadStatusMsg(
-          '⚠ No supported audio files (.mp3, .wav, .ogg, .flac, .m4a, .aac, .webm) found in selection.'
-        );
-      }
+    if (mediaFiles.length === 0) {
+      setUploadStatusMsg(
+        '⚠ No supported audio or video files (.mp3, .wav, .ogg, .flac, .m4a, .mp4, .webm) found in selection.'
+      );
       window.setTimeout(() => setUploadStatusMsg(null), 5000);
       e.target.value = '';
       return;
@@ -209,7 +217,7 @@ export const RightWorkspaceColumn: React.FC<RightWorkspaceColumnProps> = ({
 
     try {
       const newTracks: CustomAudioTrack[] = [];
-      for (const file of audioFiles) {
+      for (const file of mediaFiles) {
         const lastDotIdx = file.name.lastIndexOf('.');
         const cleanName =
           (lastDotIdx > 0 ? file.name.substring(0, lastDotIdx) : file.name).trim() ||
@@ -234,10 +242,15 @@ export const RightWorkspaceColumn: React.FC<RightWorkspaceColumnProps> = ({
           const folderName =
             folderParts.length > 1 ? folderParts[0].trim() : undefined;
 
+          const isVideo =
+            file.type.startsWith('video/') ||
+            /\.(mp4|mov|m4v|webm)$/i.test(file.name);
+
           newTracks.push({
             id: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
             name: cleanName,
             dataUrl,
+            mediaType: isVideo ? 'video' : 'audio',
             category: 'custom',
             folderName,
           });
@@ -641,566 +654,6 @@ export const RightWorkspaceColumn: React.FC<RightWorkspaceColumnProps> = ({
             <RotateCcw className="w-4 h-4" />
           </button>
         </div>
-      </div>
-
-      {/* 2. AMBIENT MUSIC & SOUNDSCAPE PANEL */}
-      <div
-        className="rounded-2xl border border-slate-800/90 p-4 shadow-xl transition-all"
-        style={panelBgStyle}
-      >
-        <div className="flex items-center justify-between mb-3">
-          <div className="flex items-center gap-2">
-            <span className="text-sm">🎶</span>
-            <h2 className="text-sm font-semibold text-white">Mini Player</h2>
-            {onOpenMusicPage && (
-              <button
-                type="button"
-                onClick={onOpenMusicPage}
-                className="text-[10px] font-medium text-indigo-400 hover:text-indigo-300 underline cursor-pointer"
-                title="Open Dedicated Full-Page Music Studio"
-              >
-                Full Studio →
-              </button>
-            )}
-          </div>
-          <div className="flex items-center gap-1">
-            <button
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              disabled={uploadingAudio}
-              title="Import Multiple Audio Files (.mp3, .wav, .ogg, .flac, .m4a)"
-              className="px-2 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[10px] font-medium text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-1 transition-colors cursor-pointer"
-            >
-              <Upload className="w-3 h-3" />
-              <span>+ Files</span>
-            </button>
-            <button
-              type="button"
-              onClick={() => folderInputRef.current?.click()}
-              disabled={uploadingAudio}
-              title="Import Entire Music Folder"
-              className="px-2 py-1 rounded-lg bg-slate-900/90 border border-slate-800 text-[10px] font-medium text-slate-300 hover:text-white hover:bg-slate-800 flex items-center gap-1 transition-colors cursor-pointer"
-            >
-              <FolderOpen className="w-3 h-3" />
-              <span>+ Folder</span>
-            </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a"
-              multiple
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-            <input
-              ref={folderInputRef}
-              type="file"
-              accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a"
-              multiple
-              {...({
-                webkitdirectory: '',
-                directory: '',
-              } as React.InputHTMLAttributes<HTMLInputElement>)}
-              onChange={handleFileUpload}
-              className="hidden"
-            />
-            <button
-              type="button"
-              onClick={() => setShowLibraryBrowser((v) => !v)}
-              title="Toggle Music Library Playlist"
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                showLibraryBrowser
-                  ? 'text-indigo-400 bg-indigo-500/15'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
-              }`}
-            >
-              <ListMusic className="w-3.5 h-3.5" />
-            </button>
-            <button
-              type="button"
-              onClick={() => setShowAudioMixer((v) => !v)}
-              title="Multi-Channel Sound Mixer"
-              className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                showAudioMixer
-                  ? 'text-indigo-400 bg-indigo-500/15'
-                  : 'text-slate-400 hover:text-white hover:bg-slate-800/70'
-              }`}
-            >
-              <Sliders className="w-3.5 h-3.5" />
-            </button>
-          </div>
-        </div>
-
-        {uploadStatusMsg && (
-          <div className="mb-2.5 px-2.5 py-1.5 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-[11px] text-indigo-200">
-            {uploadStatusMsg}
-          </div>
-        )}
-
-        {playbackProgress.playbackError && (
-          <div className="mb-2.5 px-2.5 py-1.5 rounded-lg bg-rose-500/15 border border-rose-500/30 text-[11px] text-rose-300">
-            ⚠ {playbackProgress.playbackError}
-          </div>
-        )}
-
-        <div className="flex items-center gap-3.5 mb-2.5">
-          <div className="w-16 h-16 rounded-xl overflow-hidden shrink-0 border border-slate-700/80 bg-slate-900 relative">
-            {coverScene.imageUrl ? (
-              <img
-                src={coverScene.imageUrl}
-                alt={trackTitle}
-                referrerPolicy="no-referrer"
-                onError={(e) => {
-                  (e.currentTarget as HTMLElement).style.display = 'none';
-                }}
-                className="w-full h-full object-cover"
-              />
-            ) : (
-              <div className="w-full h-full flex items-center justify-center text-xl">
-                🎧
-              </div>
-            )}
-          </div>
-
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center justify-between gap-1">
-              <div className="text-sm font-semibold text-white truncate">
-                {trackTitle}
-              </div>
-              <button
-                type="button"
-                onClick={() => handleToggleFavoriteTrack(audio.currentTrackId)}
-                className={`p-1 rounded cursor-pointer shrink-0 ${
-                  favoriteIds.includes(audio.currentTrackId)
-                    ? 'text-amber-400'
-                    : 'text-slate-500 hover:text-slate-300'
-                }`}
-                title={
-                  favoriteIds.includes(audio.currentTrackId)
-                    ? 'Remove from Saved Favorites'
-                    : 'Add to Saved Favorites'
-                }
-              >
-                <Star
-                  className={`w-3.5 h-3.5 ${
-                    favoriteIds.includes(audio.currentTrackId)
-                      ? 'fill-current'
-                      : ''
-                  }`}
-                />
-              </button>
-            </div>
-            <div className="text-xs text-slate-400 truncate mt-0.5">
-              {trackSubtitle}
-            </div>
-
-            <div className="flex items-center gap-1.5 mt-2">
-              <button
-                type="button"
-                onClick={() => onUpdateAudio({ shuffle: !audio.shuffle })}
-                className={`p-1.5 rounded-lg transition-colors cursor-pointer ${
-                  audio.shuffle
-                    ? 'text-indigo-400 bg-indigo-500/15'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
-                }`}
-                title={audio.shuffle ? 'Shuffle: ON' : 'Shuffle: OFF'}
-              >
-                <Shuffle className="w-3.5 h-3.5" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  soundEngine.resumeContextManually();
-                  onPrevTrack();
-                }}
-                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/80 transition-colors cursor-pointer"
-                title="Previous Track"
-              >
-                <SkipBack className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  soundEngine.resumeContextManually();
-                  onUpdateAudio({ isPlaying: !audio.isPlaying });
-                }}
-                className="w-8 h-8 rounded-lg flex items-center justify-center text-white shadow transition-opacity hover:opacity-90 cursor-pointer"
-                style={{ backgroundColor: styleSettings.accentColor }}
-                title={audio.isPlaying ? 'Pause Audio' : 'Play Audio'}
-              >
-                {audio.isPlaying ? (
-                  <Pause className="w-4 h-4 fill-current" />
-                ) : (
-                  <Play className="w-4 h-4 fill-current" />
-                )}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  soundEngine.resumeContextManually();
-                  onNextTrack();
-                }}
-                className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-slate-800/80 transition-colors cursor-pointer"
-                title="Next Track"
-              >
-                <SkipForward className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={handleCycleRepeatMode}
-                className={`p-1.5 rounded-lg transition-colors cursor-pointer flex items-center gap-0.5 ${
-                  (audio.repeatMode || 'all') !== 'off'
-                    ? 'text-indigo-400 bg-indigo-500/15'
-                    : 'text-slate-400 hover:text-white hover:bg-slate-800/80'
-                }`}
-                title={`Repeat Mode: ${(audio.repeatMode || 'all').toUpperCase()}`}
-              >
-                <Repeat className="w-3.5 h-3.5" />
-                {audio.repeatMode === 'one' && (
-                  <span className="text-[9px] font-bold">1</span>
-                )}
-              </button>
-            </div>
-          </div>
-        </div>
-
-        {/* Interactive Playback Progress & Seek Bar */}
-        <div className="mb-3 space-y-1">
-          <input
-            type="range"
-            min={0}
-            max={Math.max(1, playbackProgress.duration || 12)}
-            step={0.25}
-            value={Math.min(
-              playbackProgress.currentTime,
-              Math.max(1, playbackProgress.duration || 12)
-            )}
-            onChange={(e) => soundEngine.seekTo(Number(e.target.value))}
-            disabled={!playbackProgress.isSeekable}
-            className="w-full h-1 bg-slate-800 rounded-lg cursor-pointer accent-indigo-400"
-            title="Seek playback position"
-          />
-          <div className="flex items-center justify-between text-[10px] text-slate-400 font-mono-tabular">
-            <span>{formatAudioTime(playbackProgress.currentTime)}</span>
-            <span className="uppercase text-[9px] text-slate-500">
-              {playbackProgress.sourceType === 'bundled_file'
-                ? 'Bundled WAV'
-                : playbackProgress.sourceType === 'custom_file'
-                ? 'Local File'
-                : 'Live Synth'}
-            </span>
-            <span>{formatAudioTime(playbackProgress.duration || 12)}</span>
-          </div>
-        </div>
-
-        {/* Primary Volume Slider */}
-        <div className="flex items-center gap-2.5">
-          <button
-            type="button"
-            onClick={() => onUpdateAudio({ isMuted: !audio.isMuted })}
-            className="text-slate-400 hover:text-white cursor-pointer"
-            title={audio.isMuted ? 'Unmute' : 'Mute'}
-          >
-            {audio.isMuted || audio.musicVolume === 0 ? (
-              <VolumeX className="w-4 h-4 text-rose-400" />
-            ) : (
-              <Volume2 className="w-4 h-4" />
-            )}
-          </button>
-          <input
-            type="range"
-            min={0}
-            max={100}
-            value={audio.isMuted ? 0 : audio.musicVolume}
-            onChange={(e) => {
-              soundEngine.resumeContextManually();
-              onUpdateAudio({
-                musicVolume: Number(e.target.value),
-                isMuted: false,
-              });
-            }}
-            className="flex-1 h-1.5 bg-slate-800 rounded-lg cursor-pointer accent-indigo-500"
-          />
-          <span className="text-xs text-slate-400 font-mono-tabular w-8 text-right">
-            {audio.isMuted ? '0%' : `${audio.musicVolume}%`}
-          </span>
-        </div>
-
-        {/* Categorized Music Library Browser */}
-        {showLibraryBrowser && (
-          <div className="mt-3 pt-3 border-t border-slate-800/80 space-y-2">
-            {/* Category Filter Tabs */}
-            <div className="flex flex-wrap gap-1">
-              {(
-                [
-                  { id: 'all', label: 'All' },
-                  { id: 'rain', label: '🌧️ Rain' },
-                  { id: 'focus', label: '🎧 Focus' },
-                  { id: 'ambient', label: '✨ Ambient' },
-                  { id: 'nature', label: '🌲 Nature' },
-                  { id: 'instrumental', label: '🎹 Piano/Arp' },
-                  { id: 'custom', label: `📁 Local (${audio.customTracks.length})` },
-                  { id: 'favorites', label: `★ (${favoriteIds.length})` },
-                ] as { id: MusicCategoryId; label: string }[]
-              ).map((cat) => {
-                const active = activeCategory === cat.id;
-                return (
-                  <button
-                    key={cat.id}
-                    type="button"
-                    onClick={() => onUpdateAudio({ activeCategory: cat.id })}
-                    className={`px-2 py-1 rounded-lg text-[10px] font-medium border transition-colors cursor-pointer ${
-                      active
-                        ? 'bg-indigo-600/30 border-indigo-400 text-white'
-                        : 'bg-slate-900/70 border-slate-800 text-slate-400 hover:text-slate-200'
-                    }`}
-                  >
-                    {cat.label}
-                  </button>
-                );
-              })}
-            </div>
-
-            {/* Track List or Empty Library Message */}
-            {filteredLibraryItems.length === 0 ? (
-              <div className="py-4 px-3 rounded-xl bg-slate-950/70 border border-dashed border-slate-800 text-center space-y-1.5">
-                <div className="text-xs font-medium text-slate-300">
-                  {activeCategory === 'custom'
-                    ? 'No local music imported yet'
-                    : activeCategory === 'favorites'
-                    ? 'No favorite tracks saved yet'
-                    : 'No tracks in this category'}
-                </div>
-                <p className="text-[10px] text-slate-400 leading-relaxed">
-                  {activeCategory === 'custom'
-                    ? 'Click "+ Files" or "+ Folder" above to load MP3, WAV, OGG, FLAC, or M4A tracks from your computer, or place audio files inside public/music/.'
-                    : 'Click the ★ icon on any track to add it to your Favorites playlist.'}
-                </p>
-              </div>
-            ) : (
-              <div className="space-y-1 max-h-40 overflow-y-auto pr-0.5">
-                {filteredLibraryItems.map((item) => {
-                  const isCurrent = audio.currentTrackId === item.id;
-                  const isFav = favoriteIds.includes(item.id);
-                  return (
-                    <div
-                      key={item.id}
-                      className={`flex items-center justify-between gap-1.5 px-2.5 py-1.5 rounded-lg border text-xs transition-colors ${
-                        isCurrent
-                          ? 'bg-indigo-600/20 border-indigo-500/50 text-white'
-                          : 'bg-slate-900/60 border-slate-800/80 text-slate-300 hover:border-slate-700'
-                      }`}
-                    >
-                      <button
-                        type="button"
-                        onClick={() => {
-                          soundEngine.resumeContextManually();
-                          if (onSelectTrack) {
-                            onSelectTrack(item.id, null);
-                          } else {
-                            onUpdateAudio({
-                              currentTrackId: item.id,
-                              isPlaying: true,
-                            });
-                          }
-                        }}
-                        className="flex-1 min-w-0 text-left cursor-pointer"
-                      >
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-[11px] font-medium truncate">
-                            {isCurrent && audio.isPlaying ? '▶ ' : ''}
-                            {item.title}
-                          </span>
-                          <span className="px-1 py-0.2 rounded bg-slate-800 text-[9px] text-slate-400 font-mono-tabular shrink-0">
-                            {item.sourceBadge}
-                          </span>
-                        </div>
-                        <div className="text-[10px] text-slate-400 truncate">
-                          {item.subtitle}
-                        </div>
-                      </button>
-
-                      <div className="flex items-center gap-1 shrink-0">
-                        <button
-                          type="button"
-                          onClick={() => handleToggleFavoriteTrack(item.id)}
-                          className={`p-1 rounded cursor-pointer ${
-                            isFav
-                              ? 'text-amber-400'
-                              : 'text-slate-500 hover:text-slate-300'
-                          }`}
-                          title={isFav ? 'Unfavorite' : 'Favorite'}
-                        >
-                          <Star
-                            className={`w-3 h-3 ${isFav ? 'fill-current' : ''}`}
-                          />
-                        </button>
-                        {item.isCustom && (
-                          <button
-                            type="button"
-                            onClick={() => handleDeleteCustomTrack(item.id)}
-                            className="p-1 text-slate-500 hover:text-rose-400 cursor-pointer"
-                            title="Remove imported track"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* Multi-Channel Ambient Soundscape Mixer Drawer */}
-        {showAudioMixer && (
-          <div className="mt-3 pt-3 border-t border-slate-800/80 space-y-3 text-xs">
-            <div>
-              <label className="block text-[11px] text-slate-400 mb-1">
-                Background Environment Sound
-              </label>
-              <select
-                value={audio.ambientSoundId}
-                onChange={(e) => {
-                  const nextAmbient = e.target.value as AmbientSoundId;
-                  soundEngine.resumeContextManually();
-                  onUpdateAudio({
-                    ambientSoundId: nextAmbient,
-                    ambientPlaying: nextAmbient !== 'silent',
-                  });
-                }}
-                className="w-full px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-700 text-xs text-white"
-              >
-                {AMBIENT_SOUNDS.map((snd) => (
-                  <option key={snd.id} value={snd.id}>
-                    {snd.name} — {snd.description}
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {audio.customTracks.length > 0 && (
-              <div>
-                <label className="block text-[11px] text-slate-400 mb-1">
-                  Uploaded Custom Tracks ({audio.customTracks.length})
-                </label>
-                <div className="space-y-1 max-h-24 overflow-y-auto">
-                  {audio.customTracks.map((ct) => (
-                    <div
-                      key={ct.id}
-                      className="flex items-center justify-between px-2 py-1 rounded-lg bg-slate-900/90 border border-slate-800"
-                    >
-                      <button
-                        type="button"
-                        onClick={() =>
-                          onUpdateAudio({
-                            currentTrackId: ct.id,
-                            isPlaying: true,
-                          })
-                        }
-                        className={`text-[11px] truncate text-left flex-1 cursor-pointer ${
-                          audio.currentTrackId === ct.id
-                            ? 'text-indigo-300 font-semibold'
-                            : 'text-slate-300 hover:text-white'
-                        }`}
-                      >
-                        🎵 {ct.name}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteCustomTrack(ct.id)}
-                        className="text-slate-500 hover:text-rose-400 p-0.5 cursor-pointer"
-                        title="Remove uploaded track"
-                      >
-                        <Trash2 className="w-3 h-3" />
-                      </button>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-
-            <div>
-              <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-                <span>Ambient Sound Volume</span>
-                <span className="font-mono-tabular">{audio.ambientVolume}%</span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={audio.ambientVolume}
-                onChange={(e) =>
-                  onUpdateAudio({ ambientVolume: Number(e.target.value) })
-                }
-                className="w-full h-1.5 bg-slate-800 rounded-lg cursor-pointer accent-indigo-500"
-              />
-            </div>
-
-            <div>
-              <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-                <span>Notification Bell Volume</span>
-                <span className="font-mono-tabular">
-                  {audio.notificationVolume ?? 30}%
-                </span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={audio.notificationVolume ?? 30}
-                onChange={(e) =>
-                  onUpdateAudio({ notificationVolume: Number(e.target.value) })
-                }
-                className="w-full h-1.5 bg-slate-800 rounded-lg cursor-pointer accent-indigo-500"
-              />
-            </div>
-
-            <div>
-              <div className="flex justify-between text-[11px] text-slate-400 mb-1">
-                <span>UI Interaction Chimes</span>
-                <span className="font-mono-tabular">{audio.uiSoundVolume}%</span>
-              </div>
-              <input
-                type="range"
-                min={0}
-                max={100}
-                value={audio.uiSoundVolume}
-                onChange={(e) =>
-                  onUpdateAudio({ uiSoundVolume: Number(e.target.value) })
-                }
-                className="w-full h-1.5 bg-slate-800 rounded-lg cursor-pointer accent-indigo-500"
-              />
-            </div>
-
-            <label className="flex items-center justify-between text-[11px] text-slate-300 cursor-pointer pt-1">
-              <span>Scene-specific music when switching scenes</span>
-              <input
-                type="checkbox"
-                checked={Boolean(audio.autoSwitchMusicWithScene)}
-                onChange={(e) =>
-                  onUpdateAudio({
-                    autoSwitchMusicWithScene: e.target.checked,
-                  })
-                }
-                className="accent-indigo-500"
-              />
-            </label>
-
-            <button
-              type="button"
-              onClick={async () => {
-                await soundEngine.resumeContextManually();
-                soundEngine.playReminderChime();
-              }}
-              className="w-full py-1.5 rounded-lg bg-slate-900 hover:bg-slate-800 border border-slate-700 text-[11px] font-medium text-indigo-300 cursor-pointer"
-            >
-              🔊 Test Chime &amp; Verify Audio Output
-            </button>
-          </div>
-        )}
       </div>
 
       {/* 3. QUICK REMINDERS PANEL */}

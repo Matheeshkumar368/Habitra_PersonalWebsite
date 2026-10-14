@@ -48,10 +48,10 @@ import {
   HabitDetailModal,
   HabitFormModal,
   ReminderFormModal,
-  WelcomeWizardModal,
 } from './components/Modals';
 import { HabitraLogo } from './components/HabitraLogo';
-import { MagicalWelcomeExperience } from './components/MagicalWelcomeExperience';
+import { HabitraIntroVideo } from './components/HabitraIntroVideo';
+import { PersistentStreamingPlayer } from './components/PersistentStreamingPlayer';
 import { MusicPlayerView } from './components/MusicPlayerView';
 import { PixelEnvironmentCanvas } from './components/PixelEnvironmentCanvas';
 import { RightWorkspaceColumn } from './components/RightWorkspaceColumn';
@@ -176,8 +176,7 @@ export function App() {
   const [reminderModalOpen, setReminderModalOpen] = useState(false);
   const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
   const [securityModalOpen, setSecurityModalOpen] = useState(false);
-  const [welcomeModalOpen, setWelcomeModalOpen] = useState(false);
-  const [welcomeAnimationOpen, setWelcomeAnimationOpen] = useState(false);
+  const [introVideoOpen, setIntroVideoOpen] = useState(false);
 
   // New Overlays: Command Palette (Ctrl+K), Notification Center, Daily Journal, System Tray Mode
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -310,6 +309,12 @@ export function App() {
 
       setAppState({
         ...state,
+        audio: {
+          ...state.audio,
+          isPlaying: false,
+          ambientPlaying: false,
+          autoStartOnLaunch: false,
+        },
         security: {
           ...state.security,
           // Always require authentication on every new application launch if a password is set
@@ -321,8 +326,11 @@ export function App() {
           currentActiveDateStr: formatLocalYMD(now),
         },
       });
-      if (!state.profile.hasSeenWelcome) {
-        setWelcomeAnimationOpen(true);
+      const sessionIntroPlayed =
+        typeof sessionStorage !== 'undefined' &&
+        sessionStorage.getItem('habitra_intro_played');
+      if (!sessionIntroPlayed && state.audio?.playIntroOnStartup !== false) {
+        setIntroVideoOpen(true);
       }
       setIsLoaded(true);
     });
@@ -1305,16 +1313,19 @@ export function App() {
     });
   };
 
-  const handleEnterWorldFromWelcome = () => {
-    setWelcomeAnimationOpen(false);
-    handleUpdateProfile({ hasSeenWelcome: true });
-    if (!appState.profile.userNameConfigured && !appState.profile.userName) {
-      setWelcomeModalOpen(true);
+  const handleCompleteIntroVideo = () => {
+    setIntroVideoOpen(false);
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('habitra_intro_played', 'true');
     }
+    handleUpdateProfile({ hasSeenWelcome: true });
   };
 
-  const handleSkipWelcomeAnimation = () => {
-    setWelcomeAnimationOpen(false);
+  const handleSkipIntroVideo = () => {
+    setIntroVideoOpen(false);
+    if (typeof sessionStorage !== 'undefined') {
+      sessionStorage.setItem('habitra_intro_played', 'true');
+    }
     handleUpdateProfile({ hasSeenWelcome: true });
   };
 
@@ -1483,24 +1494,48 @@ export function App() {
       activeQueueTrackIds.length > 0 ? activeQueueTrackIds : allTracksList;
     if (queue.length === 0) return;
 
-    if (appState.audio.shuffle && queue.length > 1) {
-      const others = queue.filter((id) => id !== appState.audio.currentTrackId);
-      const randomId = others[Math.floor(Math.random() * others.length)];
-      recordTrackPlay(randomId);
+    // Get recent track IDs to avoid immediate repetition
+    const recentIds = (appState.audio.recentlyPlayed || [])
+      .slice(0, Math.min(5, Math.max(1, queue.length - 1)))
+      .map((r) => r.trackId);
+
+    // Filter queue to find tracks that haven't been played recently
+    let candidates = queue.filter(
+      (id) => id !== appState.audio.currentTrackId && !recentIds.includes(id)
+    );
+
+    // If all tracks were recently played, fall back to any track other than current
+    if (candidates.length === 0) {
+      candidates = queue.filter((id) => id !== appState.audio.currentTrackId);
+    }
+
+    if (candidates.length === 0) {
+      if (!manualClick && appState.audio.repeatMode === 'off') {
+        handleUpdateAudio({ isPlaying: false });
+      } else {
+        recordTrackPlay(queue[0]);
+      }
       return;
     }
 
-    const idx = queue.indexOf(appState.audio.currentTrackId);
-    if (
-      !manualClick &&
-      appState.audio.repeatMode === 'off' &&
-      idx === queue.length - 1
-    ) {
-      handleUpdateAudio({ isPlaying: false });
-      return;
+    if (appState.audio.shuffle) {
+      const randomId =
+        candidates[Math.floor(Math.random() * candidates.length)];
+      recordTrackPlay(randomId);
+    } else {
+      const curIdx = queue.indexOf(appState.audio.currentTrackId);
+      if (
+        !manualClick &&
+        appState.audio.repeatMode === 'off' &&
+        curIdx === queue.length - 1
+      ) {
+        handleUpdateAudio({ isPlaying: false });
+        return;
+      }
+      const nextCandidate =
+        candidates.find((id) => queue.indexOf(id) > curIdx) || candidates[0];
+      recordTrackPlay(nextCandidate);
     }
-    const nextId = queue[(idx + 1) % queue.length];
-    recordTrackPlay(nextId);
   };
 
   useEffect(() => {
@@ -1833,10 +1868,10 @@ export function App() {
   // Global Keyboard Shortcuts (Ctrl+K, N, G, Space, M, F, L, 1-5, Esc)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      // Never allow global shortcuts while workspace is password-locked or in the Welcome Wizard
+      // Never allow global shortcuts while workspace is password-locked or intro video is active
       if (
         (appState.security.isLocked && appState.security.passwordHash) ||
-        welcomeModalOpen
+        introVideoOpen
       ) {
         return;
       }
@@ -1921,7 +1956,7 @@ export function App() {
   }, [
     commandPaletteOpen,
     ambientModeOpen,
-    welcomeModalOpen,
+    introVideoOpen,
     appState.audio.isMuted,
     appState.security.isLocked,
     appState.security.passwordHash,
@@ -2317,8 +2352,8 @@ export function App() {
           <div className="flex items-center justify-between gap-2 px-1.5 py-2 mb-3">
             <div
               className="flex items-center gap-2.5 min-w-0 cursor-pointer group"
-              onClick={() => setWelcomeAnimationOpen(true)}
-              title="Experience Habitra Magical Intro"
+              onClick={() => setIntroVideoOpen(true)}
+              title="Play Habitra Logo Reveal Video Intro"
             >
               <HabitraLogo
                 variant={sidebarCollapsed ? 'icon' : 'full'}
@@ -4070,8 +4105,7 @@ export function App() {
                 onRestoreVersionedSnapshot={handleRestoreVersionedSnapshot}
                 onImportBackup={(restored) => setAppState(restored)}
                 onResetDefaults={handleResetAllData}
-                onOpenWelcomeWizard={() => setWelcomeModalOpen(true)}
-                onReplayWelcomeAnimation={() => setWelcomeAnimationOpen(true)}
+                onReplayIntroVideo={() => setIntroVideoOpen(true)}
                 onMinimizeToSystemTray={handleMinimizeToTray}
                 onTriggerDiagnosticNotification={
                   handleTriggerSpecificTestNotification
@@ -4213,7 +4247,7 @@ export function App() {
         }}
         onOpenNotifications={() => setNotificationCenterOpen(true)}
         onInspectHabit={(habit) => setInspectingHabitId(habit.id)}
-        onReplayWelcomeAnimation={() => setWelcomeAnimationOpen(true)}
+        onReplayIntroVideo={() => setIntroVideoOpen(true)}
       />
 
       <NotificationCenterModal
@@ -4340,55 +4374,22 @@ export function App() {
         onSaveSecurity={handleUpdateSecurity}
       />
 
-      <WelcomeWizardModal
-        isOpen={welcomeModalOpen}
-        userName={appState.profile.userName}
+      {/* Persistent YouTube & Spotify Streaming Player */}
+      <PersistentStreamingPlayer
+        audio={appState.audio}
+        activeTab={activeTab}
+        onUpdateAudio={handleUpdateAudio}
+        onNavigateToMusic={() => handleSelectTab('music')}
         accentColor={appState.style.accentColor}
-        timerSettings={appState.timer}
-        audioSettings={appState.audio}
-        profileSettings={appState.profile}
-        environmentSettings={appState.environment}
-        styleSettings={appState.style}
-        notificationPermission={notificationPermission}
-        onClose={() => {
-          setWelcomeModalOpen(false);
-          handleUpdateProfile({ hasSeenWelcome: true });
-        }}
-        onExploreHabitra={() => {
-          setWelcomeModalOpen(false);
-          handleUpdateProfile({ hasSeenWelcome: true });
-          setActiveTab('dashboard');
-        }}
-        onSelectPreset={handleApplyPreset}
-        onUpdateUserName={(userName) => handleUpdateProfile({ userName })}
-        onUpdateTimerSettings={handleUpdateTimer}
-        onUpdateAudioSettings={handleUpdateAudio}
-        onUpdateProfileSettings={handleUpdateProfile}
-        onUpdateEnvironmentSettings={handleUpdateEnvironment}
-        onUpdateStyleSettings={handleUpdateStyle}
-        onUpdateSecuritySettings={handleUpdateSecurity}
-        onQuickAddHabit={(habitName, icon, goalDays, color, description) =>
-          handleSaveHabit({
-            name: habitName,
-            icon: icon || '🌱',
-            color: color || '#22c55e',
-            description,
-            goalDays: goalDays || 30,
-            frequency: 'daily',
-            startDate: formatLocalYMD(new Date()),
-          })
-        }
-        onQuickAddReminder={(remData) => handleSaveReminder(remData)}
-        onRequestNotificationPermission={requestNotificationPermission}
       />
 
-      {/* Magical Animated Welcome Experience for First Launch & Replay */}
-      <MagicalWelcomeExperience
-        isOpen={welcomeAnimationOpen}
-        userName={appState.profile.userName}
+      {/* Habitra Official Logo Reveal Video Intro */}
+      <HabitraIntroVideo
+        isOpen={introVideoOpen}
+        videoSrc="/habitra-intro.mp4"
         accentColor={appState.style.accentColor}
-        onEnterWorld={handleEnterWorldFromWelcome}
-        onSkip={handleSkipWelcomeAnimation}
+        onComplete={handleCompleteIntroVideo}
+        onSkip={handleSkipIntroVideo}
       />
     </div>
   );

@@ -1475,8 +1475,7 @@ interface SettingsAndBackupViewProps {
   onRestoreVersionedSnapshot?: (entry: VersionedBackupEntry) => void;
   onImportBackup: (state: AppDataState) => void;
   onResetDefaults: () => void;
-  onOpenWelcomeWizard: () => void;
-  onReplayWelcomeAnimation?: () => void;
+  onReplayIntroVideo?: () => void;
   onMinimizeToSystemTray?: () => void;
   onTriggerDiagnosticNotification?: (
     kind: 'water' | 'study' | 'eye' | 'exercise' | 'streak' | 'timer'
@@ -1500,8 +1499,7 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
   onRestoreVersionedSnapshot,
   onImportBackup,
   onResetDefaults,
-  onOpenWelcomeWizard,
-  onReplayWelcomeAnimation,
+  onReplayIntroVideo,
   onMinimizeToSystemTray,
   onTriggerDiagnosticNotification,
   onSimulateMissedReminder,
@@ -1598,25 +1596,17 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {onReplayWelcomeAnimation && (
+              {onReplayIntroVideo && (
                 <button
                   type="button"
-                  onClick={onReplayWelcomeAnimation}
-                  className="px-3.5 py-2 rounded-xl bg-violet-500/20 hover:bg-violet-500/30 border border-violet-400/40 text-xs font-semibold text-violet-200 flex items-center gap-1.5 cursor-pointer"
-                  title="Experience the magical animated welcome intro"
+                  onClick={onReplayIntroVideo}
+                  className="px-3.5 py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/40 text-xs font-semibold text-indigo-200 flex items-center gap-1.5 cursor-pointer shadow transition-colors"
+                  title="Play the official Habitra logo reveal video intro"
                 >
-                  <Compass className="w-3.5 h-3.5 text-violet-300" />
-                  <span>Welcome Animation</span>
+                  <Sparkles className="w-3.5 h-3.5 text-indigo-300" />
+                  <span>Replay Logo Reveal Intro</span>
                 </button>
               )}
-              <button
-                type="button"
-                onClick={onOpenWelcomeWizard}
-                className="px-3.5 py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/40 text-xs font-semibold text-indigo-200 flex items-center gap-1.5 cursor-pointer"
-              >
-                <Sparkles className="w-3.5 h-3.5" />
-                <span>Reopen Setup Wizard</span>
-              </button>
             </div>
           </div>
 

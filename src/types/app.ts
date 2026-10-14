@@ -278,10 +278,39 @@ export type MusicCategoryId =
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
+export type MusicActiveSource = 'ambient' | 'library' | 'youtube' | 'spotify';
+
+export type AmbientMoodId =
+  | 'peaceful_exploration'
+  | 'rainy_forest'
+  | 'underground_cave'
+  | 'night_sky'
+  | 'cozy_library'
+  | 'deep_focus';
+
+export interface YouTubeSavedItem {
+  id: string;
+  title: string;
+  url: string;
+  embedId: string;
+  type: 'video' | 'playlist';
+  addedAt: string;
+}
+
+export interface SpotifySavedItem {
+  id: string;
+  title: string;
+  url: string;
+  embedUri: string;
+  type: 'track' | 'album' | 'playlist';
+  addedAt: string;
+}
+
 export interface CustomAudioTrack {
   id: string;
   name: string;
   dataUrl: string;
+  mediaType?: 'audio' | 'video';
   category?: 'ambient' | 'focus' | 'nature' | 'rain' | 'instrumental' | 'custom';
   artist?: string;
   description?: string;
@@ -326,6 +355,21 @@ export interface AudioSettings {
   playlists?: UserPlaylist[];
   activePlaylistId?: string | null;
   recentlyPlayed?: RecentTrackEntry[];
+  // Redesigned Music Engine fields
+  activeSource?: MusicActiveSource;
+  selectedMood?: AmbientMoodId;
+  sleepTimerMinutes?: number | null;
+  sleepTimerEndTimestamp?: number | null;
+  crossfadeEnabled?: boolean;
+  autoStartOnLaunch?: boolean;
+  continueBetweenPages?: boolean;
+  youtubeItems?: YouTubeSavedItem[];
+  activeYouTubeId?: string | null;
+  spotifyItems?: SpotifySavedItem[];
+  activeSpotifyUri?: string | null;
+  spotifyClientId?: string;
+  activeVideoTrackId?: string | null;
+  playIntroOnStartup?: boolean;
 }
 
 export type TimerMode = 'focus' | 'short_break' | 'long_break' | 'custom';
