@@ -22,7 +22,9 @@ const STORE_KEYS: (keyof AppDataState)[] = [
   'notificationHistory',
   'roomLayout',
   'journalEntries',
+  'dailyUpdates',
   'versionedBackups',
+  'quickNote',
 ];
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -137,6 +139,9 @@ function mergeWithDefaults(partial: Partial<AppDataState>): AppDataState {
       partial.journalEntries && typeof partial.journalEntries === 'object'
         ? partial.journalEntries
         : defaults.journalEntries,
+    dailyUpdates: Array.isArray(partial.dailyUpdates)
+      ? partial.dailyUpdates
+      : defaults.dailyUpdates || [],
     versionedBackups: Array.isArray(partial.versionedBackups)
       ? partial.versionedBackups
       : defaults.versionedBackups,

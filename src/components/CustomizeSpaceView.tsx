@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import {
   ChevronLeft,
   ChevronRight,
@@ -20,6 +20,7 @@ import {
   Play,
   Pause,
   EyeOff,
+  Upload,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import {
@@ -114,6 +115,54 @@ export const CustomizeSpaceView: React.FC<CustomizeSpaceViewProps> = ({
   const [newPresetSubtitle, setNewPresetSubtitle] = useState('');
   const [showPresetCreator, setShowPresetCreator] = useState(false);
   const [newAudioPresetName, setNewAudioPresetName] = useState('');
+
+  const customBgInputRef = useRef<HTMLInputElement | null>(null);
+  const [customBgStatus, setCustomBgStatus] = useState<string | null>(null);
+
+  const handleCustomBgUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const isVideo = file.type.startsWith('video/') || /\.(mp4|webm)$/i.test(file.name);
+    const isImage = file.type.startsWith('image/') || /\.(png|jpe?g|webp|gif)$/i.test(file.name);
+
+    if (!isVideo && !isImage) {
+      setCustomBgStatus('⚠ Please select a valid video (.mp4, .webm) or image (.png, .jpg, .webp, .gif) file.');
+      window.setTimeout(() => setCustomBgStatus(null), 4000);
+      e.target.value = '';
+      return;
+    }
+
+    const maxSize = isVideo ? 25 * 1024 * 1024 : 10 * 1024 * 1024;
+    if (file.size > maxSize) {
+      setCustomBgStatus(`⚠ File exceeds ${isVideo ? '25MB' : '10MB'} limit. Please select a smaller file.`);
+      window.setTimeout(() => setCustomBgStatus(null), 4000);
+      e.target.value = '';
+      return;
+    }
+
+    try {
+      const dataUrl = await new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result || ''));
+        reader.onerror = () => reject(reader.error);
+        reader.readAsDataURL(file);
+      });
+
+      onUpdateEnvironment({
+        customBackgroundUrl: dataUrl,
+        customBackgroundType: isVideo ? 'video' : 'image',
+      });
+      soundEngine.playNotification('success');
+      setCustomBgStatus(`✓ Custom ${isVideo ? 'animated video' : 'image'} backdrop applied!`);
+      window.setTimeout(() => setCustomBgStatus(null), 4000);
+    } catch {
+      setCustomBgStatus('⚠ Failed to read backdrop media file.');
+      window.setTimeout(() => setCustomBgStatus(null), 4000);
+    } finally {
+      e.target.value = '';
+    }
+  };
 
   const currentSceneIndex = PIXEL_SCENES.findIndex(
     (s) => s.id === environment.sceneId
@@ -246,6 +295,9 @@ export const CustomizeSpaceView: React.FC<CustomizeSpaceViewProps> = ({
                       src={sceneMeta.imageUrl}
                       alt={preset.name}
                       referrerPolicy="no-referrer"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLElement).style.display = 'none';
+                      }}
                       className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
                     />
                   )}
@@ -316,6 +368,81 @@ export const CustomizeSpaceView: React.FC<CustomizeSpaceViewProps> = ({
             })}
           </div>
         </div>
+
+        {/* Custom Realm Backdrop Upload (MP4/WebM Video or Photo) */}
+        <div className="mt-5 pt-4 border-t border-slate-800/80">
+          <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+            <div>
+              <div className="text-xs font-semibold text-white flex items-center gap-1.5">
+                <span>🌌</span>
+                <span>Custom Realm Backdrop</span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                Upload your own animated MP4/WebM video loop or photo for your study space.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => customBgInputRef.current?.click()}
+              className="px-3 py-1.5 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-400/50 text-xs font-medium text-indigo-200 flex items-center gap-1.5 cursor-pointer whitespace-nowrap"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              <span>Upload Video / Photo</span>
+            </button>
+            <input
+              ref={customBgInputRef}
+              type="file"
+              accept="image/png,image/jpeg,image/webp,image/gif,video/mp4,video/webm"
+              onChange={handleCustomBgUpload}
+              className="hidden"
+            />
+          </div>
+
+          {customBgStatus && (
+            <div className="mb-3 px-3 py-1.5 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-xs text-indigo-300">
+              {customBgStatus}
+            </div>
+          )}
+
+          {environment.customBackgroundUrl && (
+            <div className="relative rounded-xl overflow-hidden border border-indigo-500/40 bg-slate-950 aspect-video flex items-center justify-center">
+              {environment.customBackgroundType === 'video' ? (
+                <video
+                  src={environment.customBackgroundUrl}
+                  autoPlay
+                  loop
+                  muted
+                  playsInline
+                  className="w-full h-full object-cover"
+                />
+              ) : (
+                <img
+                  src={environment.customBackgroundUrl}
+                  alt="Custom Backdrop"
+                  className="w-full h-full object-cover"
+                />
+              )}
+              <div className="absolute top-2 right-2 flex items-center gap-2">
+                <span className="px-2 py-0.5 rounded bg-black/80 border border-white/20 text-[10px] text-white font-medium">
+                  Active {environment.customBackgroundType === 'video' ? 'Video Backdrop' : 'Photo Backdrop'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onUpdateEnvironment({
+                      customBackgroundUrl: undefined,
+                      customBackgroundType: undefined,
+                    });
+                    soundEngine.playUiClick();
+                  }}
+                  className="px-2.5 py-1 rounded bg-rose-500/80 hover:bg-rose-500 text-white text-xs font-semibold cursor-pointer"
+                >
+                  Clear & Revert
+                </button>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* RIGHT: CUSTOMIZE MY SPACE STUDIO (Matches bottom-center-left of screenshot) */}
@@ -348,7 +475,7 @@ export const CustomizeSpaceView: React.FC<CustomizeSpaceViewProps> = ({
         </div>
 
         {/* 5 Category Tabs: Environment | Audio | UI | Effects | Room Garden */}
-        <div className="grid grid-cols-5 gap-1 p-1 rounded-xl bg-slate-950/80 border border-slate-800 mb-5">
+        <div className="flex items-center gap-1 overflow-x-auto no-scrollbar sm:grid sm:grid-cols-5 p-1 rounded-xl bg-slate-950/80 border border-slate-800 mb-5">
           {(
             [
               { id: 'environment', label: 'Environment' },
@@ -364,7 +491,7 @@ export const CustomizeSpaceView: React.FC<CustomizeSpaceViewProps> = ({
                 key={t.id}
                 type="button"
                 onClick={() => setActiveTab(t.id)}
-                className={`py-1.5 px-2 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
+                className={`py-1.5 px-2.5 sm:px-2 rounded-lg text-xs font-medium transition-all cursor-pointer whitespace-nowrap text-center shrink-0 sm:shrink ${
                   active
                     ? 'text-white shadow-sm'
                     : 'text-slate-400 hover:text-slate-200'

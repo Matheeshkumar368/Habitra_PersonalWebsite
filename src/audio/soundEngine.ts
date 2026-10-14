@@ -615,6 +615,14 @@ class AmbientSoundEngine {
     }
   }
 
+  private normalizeUrl(url: string): string {
+    if (!url) return url;
+    if (url.startsWith('./')) {
+      return '/' + url.slice(2);
+    }
+    return url;
+  }
+
   private resolveAudioFileSource(settings: AudioSettings): {
     url: string;
     title: string;
@@ -638,7 +646,7 @@ class AmbientSoundEngine {
     );
     if (builtin?.src && !builtin.src.startsWith('synth://')) {
       return {
-        url: builtin.src,
+        url: this.normalizeUrl(builtin.src),
         title: builtin.title,
         isCustom: false,
         fallbackDuration: builtin.durationSeconds || 12,
@@ -650,7 +658,7 @@ class AmbientSoundEngine {
     );
     if (manifestItem?.src && !manifestItem.src.startsWith('synth://')) {
       return {
-        url: manifestItem.src,
+        url: this.normalizeUrl(manifestItem.src),
         title: manifestItem.title,
         isCustom: false,
         fallbackDuration: manifestItem.durationSeconds || 12,
@@ -794,6 +802,30 @@ class AmbientSoundEngine {
         [174.61, 220.0, 261.63, 349.23, 440.0], // Fmaj7
         [196.0, 246.94, 293.66, 349.23, 440.0], // G13
       ],
+      lofi_chill_beats: [
+        [261.63, 311.13, 392.0, 466.16, 523.25], // Cm9
+        [174.61, 220.0, 261.63, 311.13, 440.0],  // Fm9
+        [233.08, 293.66, 349.23, 415.3, 523.25], // Bbm9
+        [207.65, 261.63, 311.13, 392.0, 466.16], // Abmaj7
+      ],
+      lofi_rainy_cafe: [
+        [261.63, 329.63, 392.0, 493.88, 659.25], // Cmaj9
+        [220.0, 261.63, 329.63, 392.0, 587.33],  // Am9
+        [146.83, 220.0, 261.63, 349.23, 440.0],  // Dm9
+        [196.0, 246.94, 293.66, 349.23, 523.25], // G13
+      ],
+      minecraft_calm: [
+        [261.63, 329.63, 392.0, 493.88, 523.25], // Cmaj7 / Cadd9
+        [220.0, 261.63, 329.63, 392.0, 440.0],   // Am7
+        [174.61, 220.0, 261.63, 329.63, 349.23], // Fmaj7
+        [196.0, 246.94, 293.66, 392.0, 493.88],  // Gadd9
+      ],
+      minecraft_subwoofer: [
+        [164.81, 246.94, 329.63, 392.0, 493.88], // Em9
+        [174.61, 220.0, 261.63, 329.63, 523.25],  // Fmaj7#11
+        [130.81, 196.0, 261.63, 329.63, 392.0],  // Cmaj9
+        [146.83, 220.0, 293.66, 369.99, 440.0],  // Dmaj9
+      ],
       ambient_piano: [
         [293.66, 349.23, 440.0, 523.25, 659.25], // Dm9
         [233.08, 293.66, 349.23, 440.0, 523.25], // Bbmaj9
@@ -864,7 +896,15 @@ class AmbientSoundEngine {
       const filter = this.ctx.createBiquadFilter();
       filter.type = 'lowpass';
       filter.frequency.setValueAtTime(
-        trackId === 'ambient_piano' || trackId === 'warm_piano'
+        trackId === 'minecraft_calm'
+          ? 1100
+          : trackId === 'minecraft_subwoofer'
+          ? 950
+          : trackId === 'lofi_chill_beats'
+          ? 780
+          : trackId === 'lofi_rainy_cafe'
+          ? 840
+          : trackId === 'ambient_piano' || trackId === 'warm_piano'
           ? 1250
           : trackId === 'cozy_guitar' || trackId === 'forest_breeze'
           ? 1400
@@ -880,24 +920,32 @@ class AmbientSoundEngine {
 
         const isMelodyNote = idx === chord.length - 1;
         osc.type =
-          trackId === 'midnight_synth' ||
-          trackId === 'cozy_synth' ||
-          trackId === 'cyber_chill' ||
-          trackId === 'night_study'
+          trackId === 'minecraft_subwoofer'
+            ? 'sine'
+            : trackId === 'minecraft_calm'
+            ? isMelodyNote
+              ? 'sine'
+              : 'triangle'
+            : trackId === 'midnight_synth' ||
+              trackId === 'cozy_synth' ||
+              trackId === 'cyber_chill' ||
+              trackId === 'night_study'
             ? isMelodyNote
               ? 'triangle'
               : 'sine'
             : 'triangle';
 
         osc.frequency.setValueAtTime(freq, now);
-        osc.detune.setValueAtTime((Math.random() - 0.5) * 9, now);
+        osc.detune.setValueAtTime((Math.random() - 0.5) * 8, now);
 
         const stagger =
+          trackId === 'minecraft_calm' ||
+          trackId === 'minecraft_subwoofer' ||
           trackId === 'ambient_piano' ||
           trackId === 'warm_piano' ||
           trackId === 'cozy_guitar' ||
           trackId === 'forest_breeze'
-            ? idx * 0.26
+            ? idx * 0.28
             : isMelodyNote
             ? 0.9
             : idx * 0.06;
@@ -1231,6 +1279,258 @@ class AmbientSoundEngine {
       g.connect(this.notificationGain!);
       osc.start(now + idx * 0.12);
       osc.stop(now + idx * 0.12 + 0.5);
+    });
+  }
+
+  private lastSoundTimes: Record<string, number> = {};
+
+  private isSoundThrottled(key: string, minIntervalMs = 45): boolean {
+    const now = Date.now();
+    const last = this.lastSoundTimes[key] || 0;
+    if (now - last < minIntervalMs) return true;
+    this.lastSoundTimes[key] = now;
+    return false;
+  }
+
+  public playUiClick() {
+    if (
+      this.currentSettings?.isMuted ||
+      (this.currentSettings?.uiSoundVolume ?? 35) === 0 ||
+      this.isSoundThrottled('click', 50)
+    ) {
+      return;
+    }
+    const ctx = this.ensureContext();
+    if (!ctx || !this.uiGain) return;
+    const now = ctx.currentTime;
+
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(640, now);
+    osc.frequency.exponentialRampToValueAtTime(320, now + 0.025);
+    g.gain.setValueAtTime(0.12, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.03);
+    osc.connect(g);
+    g.connect(this.uiGain);
+    osc.start(now);
+    osc.stop(now + 0.035);
+  }
+
+  public playTabSwitch() {
+    if (
+      this.currentSettings?.isMuted ||
+      (this.currentSettings?.uiSoundVolume ?? 35) === 0 ||
+      this.isSoundThrottled('tab', 80)
+    ) {
+      return;
+    }
+    const ctx = this.ensureContext();
+    if (!ctx || !this.uiGain) return;
+    const now = ctx.currentTime;
+
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(520, now);
+    osc.frequency.exponentialRampToValueAtTime(740, now + 0.045);
+    g.gain.setValueAtTime(0.14, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.055);
+    osc.connect(g);
+    g.connect(this.uiGain);
+    osc.start(now);
+    osc.stop(now + 0.06);
+  }
+
+  public playDialogToggle(isOpen: boolean) {
+    if (
+      this.currentSettings?.isMuted ||
+      (this.currentSettings?.uiSoundVolume ?? 35) === 0 ||
+      this.isSoundThrottled('dialog', 100)
+    ) {
+      return;
+    }
+    const ctx = this.ensureContext();
+    if (!ctx || !this.uiGain) return;
+    const now = ctx.currentTime;
+
+    const notes = isOpen ? [440, 660] : [660, 440];
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.04);
+      g.gain.setValueAtTime(0.15, now + idx * 0.04);
+      g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.04 + 0.12);
+      osc.connect(g);
+      g.connect(this.uiGain!);
+      osc.start(now + idx * 0.04);
+      osc.stop(now + idx * 0.04 + 0.14);
+    });
+  }
+
+  public playTimerAction(type: 'start' | 'pause' | 'resume' | 'reset') {
+    if (
+      this.currentSettings?.isMuted ||
+      (this.currentSettings?.uiSoundVolume ?? 35) === 0 ||
+      this.isSoundThrottled('timer_' + type, 80)
+    ) {
+      return;
+    }
+    const ctx = this.ensureContext();
+    if (!ctx || !this.uiGain) return;
+    const now = ctx.currentTime;
+
+    if (type === 'start' || type === 'resume') {
+      [440, 880].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.06);
+        g.gain.setValueAtTime(0.2, now + idx * 0.06);
+        g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.06 + 0.16);
+        osc.connect(g);
+        g.connect(this.uiGain!);
+        osc.start(now + idx * 0.06);
+        osc.stop(now + idx * 0.06 + 0.18);
+      });
+    } else if (type === 'pause') {
+      [580, 420].forEach((freq, idx) => {
+        const osc = ctx.createOscillator();
+        const g = ctx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, now + idx * 0.05);
+        g.gain.setValueAtTime(0.16, now + idx * 0.05);
+        g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.05 + 0.1);
+        osc.connect(g);
+        g.connect(this.uiGain!);
+        osc.start(now + idx * 0.05);
+        osc.stop(now + idx * 0.05 + 0.12);
+      });
+    } else {
+      // reset
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(600, now);
+      osc.frequency.exponentialRampToValueAtTime(260, now + 0.12);
+      g.gain.setValueAtTime(0.18, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.14);
+      osc.connect(g);
+      g.connect(this.uiGain!);
+      osc.start(now);
+      osc.stop(now + 0.15);
+    }
+  }
+
+  public playRealmTravel() {
+    if (
+      this.currentSettings?.isMuted ||
+      (this.currentSettings?.uiSoundVolume ?? 35) === 0 ||
+      this.isSoundThrottled('realm_travel', 250)
+    ) {
+      return;
+    }
+    const ctx = this.ensureContext();
+    if (!ctx || !this.uiGain) return;
+    const now = ctx.currentTime;
+
+    // Atmospheric celestial harp sweep
+    [329.63, 440, 554.37, 659.25, 880].forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = 'sine';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.05);
+      g.gain.setValueAtTime(0.18, now + idx * 0.05);
+      g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.05 + 0.45);
+      osc.connect(g);
+      g.connect(this.uiGain!);
+      osc.start(now + idx * 0.05);
+      osc.stop(now + idx * 0.05 + 0.5);
+    });
+  }
+
+  public playMediaAction(action: 'play' | 'pause' | 'skip' | 'repeat' | 'shuffle') {
+    if (
+      this.currentSettings?.isMuted ||
+      (this.currentSettings?.uiSoundVolume ?? 35) === 0 ||
+      this.isSoundThrottled('media_' + action, 60)
+    ) {
+      return;
+    }
+    const ctx = this.ensureContext();
+    if (!ctx || !this.uiGain) return;
+    const now = ctx.currentTime;
+
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = action === 'play' ? 'sine' : 'triangle';
+    const startF = action === 'play' ? 440 : action === 'pause' ? 380 : 540;
+    const endF = action === 'play' ? 660 : action === 'pause' ? 320 : 620;
+    osc.frequency.setValueAtTime(startF, now);
+    osc.frequency.exponentialRampToValueAtTime(endF, now + 0.04);
+    g.gain.setValueAtTime(0.14, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.05);
+    osc.connect(g);
+    g.connect(this.uiGain);
+    osc.start(now);
+    osc.stop(now + 0.06);
+  }
+
+  public playToggle(checked: boolean) {
+    if (
+      this.currentSettings?.isMuted ||
+      (this.currentSettings?.uiSoundVolume ?? 35) === 0 ||
+      this.isSoundThrottled('toggle', 50)
+    ) {
+      return;
+    }
+    const ctx = this.ensureContext();
+    if (!ctx || !this.uiGain) return;
+    const now = ctx.currentTime;
+
+    const osc = ctx.createOscillator();
+    const g = ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(checked ? 480 : 360, now);
+    osc.frequency.exponentialRampToValueAtTime(checked ? 720 : 280, now + 0.035);
+    g.gain.setValueAtTime(0.12, now);
+    g.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+    osc.connect(g);
+    g.connect(this.uiGain);
+    osc.start(now);
+    osc.stop(now + 0.045);
+  }
+
+  public playNotification(type: 'success' | 'warning' | 'error') {
+    if (
+      this.currentSettings?.isMuted ||
+      (this.currentSettings?.notificationVolume ?? 30) === 0 ||
+      this.isSoundThrottled('notif_' + type, 150)
+    ) {
+      return;
+    }
+    const ctx = this.ensureContext();
+    if (!ctx || !this.notificationGain) return;
+    const now = ctx.currentTime;
+
+    const chords = {
+      success: [523.25, 659.25, 783.99], // C Major
+      warning: [440, 554.37, 659.25], // A Major
+      error: [349.23, 440, 493.88], // Diminished/low
+    };
+    const notes = chords[type];
+    notes.forEach((freq, idx) => {
+      const osc = ctx.createOscillator();
+      const g = ctx.createGain();
+      osc.type = type === 'error' ? 'sawtooth' : 'sine';
+      osc.frequency.setValueAtTime(freq, now + idx * 0.06);
+      g.gain.setValueAtTime(type === 'error' ? 0.08 : 0.16, now + idx * 0.06);
+      g.gain.exponentialRampToValueAtTime(0.001, now + idx * 0.06 + 0.35);
+      osc.connect(g);
+      g.connect(this.notificationGain!);
+      osc.start(now + idx * 0.06);
+      osc.stop(now + idx * 0.06 + 0.38);
     });
   }
 }

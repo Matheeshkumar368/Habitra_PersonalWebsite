@@ -85,6 +85,7 @@ export const MusicPlayerView: React.FC<MusicPlayerViewProps> = ({
   const [uploadingAudio, setUploadingAudio] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [manifestVersion, setManifestVersion] = useState(0);
+  const [coverFailed, setCoverFailed] = useState(false);
 
   // Playlist creation state
   const [newPlaylistName, setNewPlaylistName] = useState('');
@@ -144,6 +145,10 @@ export const MusicPlayerView: React.FC<MusicPlayerViewProps> = ({
     );
   }, [allTracks, audio.currentTrackId]);
 
+  useEffect(() => {
+    setCoverFailed(false);
+  }, [currentTrack.id, currentTrack.coverImageUrl]);
+
   const favoriteIds = audio.favoriteTrackIds || [];
   const playlists =
     audio.playlists && audio.playlists.length > 0
@@ -164,18 +169,23 @@ export const MusicPlayerView: React.FC<MusicPlayerViewProps> = ({
   const probeAudioDuration = (dataUrl: string): Promise<number> => {
     return new Promise((resolve) => {
       const tempAudio = new Audio();
-      const timeout = window.setTimeout(() => resolve(0), 2500);
+      const timeout = window.setTimeout(() => {
+        tempAudio.src = '';
+        resolve(0);
+      }, 2500);
       tempAudio.preload = 'metadata';
       tempAudio.onloadedmetadata = () => {
         window.clearTimeout(timeout);
-        resolve(
+        const dur =
           Number.isFinite(tempAudio.duration) && tempAudio.duration > 0
             ? Math.round(tempAudio.duration)
-            : 0
-        );
+            : 0;
+        tempAudio.src = '';
+        resolve(dur);
       };
       tempAudio.onerror = () => {
         window.clearTimeout(timeout);
+        tempAudio.src = '';
         resolve(0);
       };
       tempAudio.src = dataUrl;
@@ -186,80 +196,131 @@ export const MusicPlayerView: React.FC<MusicPlayerViewProps> = ({
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const audioFiles = Array.from(files).filter(
+    const fileList = Array.from(files);
+    const audioFiles = fileList.filter(
       (f) =>
         f.type.startsWith('audio/') ||
         /\.(mp3|wav|ogg|flac|m4a|aac|webm)$/i.test(f.name)
     );
 
+    const videoOnlyFiles = fileList.filter(
+      (f) =>
+        (f.type.startsWith('video/') || /\.(mp4|mov)$/i.test(f.name)) &&
+        !/\.(webm)$/i.test(f.name)
+    );
+
     if (audioFiles.length === 0) {
-      setStatusMessage(
-        '⚠ No supported audio files (.mp3, .wav, .ogg, .flac, .m4a, .aac) found in selection.'
-      );
-      window.setTimeout(() => setStatusMessage(null), 4000);
+      if (videoOnlyFiles.length > 0) {
+        setStatusMessage(
+          `⚠ "${videoOnlyFiles[0].name}" is a video file. To use videos as Realm Portal backgrounds, please upload it in "Customize Space > Custom Backdrop".`
+        );
+      } else {
+        setStatusMessage(
+          '⚠ No supported audio files (.mp3, .wav, .ogg, .flac, .m4a, .aac, .webm) found in selection.'
+        );
+      }
+      window.setTimeout(() => setStatusMessage(null), 5000);
       e.target.value = '';
       return;
     }
 
     setUploadingAudio(true);
+    let importedCount = 0;
+    let duplicateCount = 0;
+    let failedCount = 0;
+    const existingNames = new Set(
+      audio.customTracks.map((t) => t.name.trim().toLowerCase())
+    );
+
     try {
       const newTracks: CustomAudioTrack[] = [];
       for (const file of audioFiles) {
-        const dataUrl = await new Promise<string>((resolve, reject) => {
-          const reader = new FileReader();
-          reader.onload = () => resolve(String(reader.result || ''));
-          reader.onerror = () => reject(reader.error);
-          reader.readAsDataURL(file);
-        });
-        const durationSeconds = await probeAudioDuration(dataUrl);
-        const relPath = (file as File & { webkitRelativePath?: string })
-          .webkitRelativePath;
-        const folderParts = relPath ? relPath.split('/') : [];
-        const folderName =
-          folderParts.length > 1 ? folderParts[0] : undefined;
+        // Robust clean track title preserving Unicode and inner dots
+        const lastDotIdx = file.name.lastIndexOf('.');
+        const cleanName =
+          (lastDotIdx > 0 ? file.name.substring(0, lastDotIdx) : file.name).trim() ||
+          'Untitled Track';
 
-        // Infer category from folder name if matching
-        let inferredCategory: CustomAudioTrack['category'] = 'custom';
-        const lowerFolder = (folderName || '').toLowerCase();
-        if (lowerFolder.includes('ambient')) inferredCategory = 'ambient';
-        else if (lowerFolder.includes('focus') || lowerFolder.includes('study'))
-          inferredCategory = 'focus';
-        else if (lowerFolder.includes('nature') || lowerFolder.includes('forest'))
-          inferredCategory = 'nature';
-        else if (lowerFolder.includes('rain') || lowerFolder.includes('lofi'))
-          inferredCategory = 'rain';
-        else if (
-          lowerFolder.includes('instrumental') ||
-          lowerFolder.includes('piano')
-        )
-          inferredCategory = 'instrumental';
+        if (existingNames.has(cleanName.toLowerCase())) {
+          duplicateCount++;
+          continue;
+        }
 
-        newTracks.push({
-          id: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-          name: file.name.replace(/\.[^/.]+$/, ''),
-          dataUrl,
-          category: inferredCategory,
-          artist: folderName || 'Local Import',
-          folderName,
-          durationSeconds,
-          addedAt: new Date().toLocaleDateString('en-US', {
-            month: 'short',
-            day: 'numeric',
-          }),
-        });
+        try {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => resolve(String(reader.result || ''));
+            reader.onerror = () => reject(reader.error);
+            reader.readAsDataURL(file);
+          });
+
+          const durationSeconds = await probeAudioDuration(dataUrl);
+          const relPath = (file as File & { webkitRelativePath?: string })
+            .webkitRelativePath;
+          const folderParts = relPath ? relPath.split('/') : [];
+          const folderName =
+            folderParts.length > 1 ? folderParts[0].trim() : undefined;
+
+          // Infer category from folder name if matching
+          let inferredCategory: CustomAudioTrack['category'] = 'custom';
+          const lowerFolder = (folderName || '').toLowerCase();
+          if (lowerFolder.includes('ambient')) inferredCategory = 'ambient';
+          else if (lowerFolder.includes('focus') || lowerFolder.includes('study'))
+            inferredCategory = 'focus';
+          else if (lowerFolder.includes('nature') || lowerFolder.includes('forest'))
+            inferredCategory = 'nature';
+          else if (lowerFolder.includes('rain') || lowerFolder.includes('lofi'))
+            inferredCategory = 'rain';
+          else if (
+            lowerFolder.includes('instrumental') ||
+            lowerFolder.includes('piano')
+          )
+            inferredCategory = 'instrumental';
+
+          newTracks.push({
+            id: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            name: cleanName,
+            dataUrl,
+            category: inferredCategory,
+            artist: folderName || 'Local Import',
+            folderName,
+            durationSeconds,
+            addedAt: new Date().toLocaleDateString('en-US', {
+              month: 'short',
+              day: 'numeric',
+            }),
+          });
+          existingNames.add(cleanName.toLowerCase());
+          importedCount++;
+        } catch {
+          failedCount++;
+        }
       }
 
       if (newTracks.length > 0) {
         onUploadLocalTracks(newTracks);
+        soundEngine.playNotification('success');
+        let msg = `✓ Imported ${importedCount} audio track${
+          importedCount > 1 ? 's' : ''
+        } into your library`;
+        if (duplicateCount > 0) {
+          msg += ` (${duplicateCount} existing duplicate${
+            duplicateCount > 1 ? 's' : ''
+          } skipped)`;
+        }
+        setStatusMessage(msg);
+        window.setTimeout(() => setStatusMessage(null), 4500);
+      } else if (duplicateCount > 0) {
         setStatusMessage(
-          `✓ Imported ${newTracks.length} audio track${
-            newTracks.length > 1 ? 's' : ''
-          } into your local library`
+          `ℹ All ${duplicateCount} selected file(s) are already in your library.`
         );
+        window.setTimeout(() => setStatusMessage(null), 4000);
+      } else if (failedCount > 0) {
+        setStatusMessage('⚠ Could not read one or more selected audio files.');
         window.setTimeout(() => setStatusMessage(null), 4000);
       }
     } catch {
-      setStatusMessage('⚠ Failed to import one or more audio files.');
+      setStatusMessage('⚠ Failed to import audio files.');
       window.setTimeout(() => setStatusMessage(null), 4000);
     } finally {
       setUploadingAudio(false);
@@ -440,6 +501,9 @@ export const MusicPlayerView: React.FC<MusicPlayerViewProps> = ({
                 src={item.coverImageUrl}
                 alt={item.title}
                 referrerPolicy="no-referrer"
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = 'none';
+                }}
                 className="absolute inset-0 w-full h-full object-cover opacity-55 group-hover/btn:opacity-35 transition-opacity"
               />
             )}
@@ -666,16 +730,17 @@ export const MusicPlayerView: React.FC<MusicPlayerViewProps> = ({
           <div className="lg:col-span-7 p-4 rounded-2xl bg-slate-950/75 border border-slate-800/90 flex flex-col justify-between gap-4">
             <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4">
               <div className="w-24 h-24 rounded-2xl overflow-hidden border border-slate-700/80 bg-slate-900 shrink-0 relative shadow-lg">
-                {currentTrack.coverImageUrl ? (
+                {currentTrack.coverImageUrl && !coverFailed ? (
                   <img
                     src={currentTrack.coverImageUrl}
                     alt={currentTrack.title}
                     referrerPolicy="no-referrer"
+                    onError={() => setCoverFailed(true)}
                     className="w-full h-full object-cover"
                   />
                 ) : (
-                  <div className="w-full h-full flex items-center justify-center text-3xl">
-                    🎧
+                  <div className="w-full h-full flex flex-col items-center justify-center bg-gradient-to-br from-indigo-950/80 to-slate-900 text-3xl">
+                    <span>🎧</span>
                   </div>
                 )}
                 {audio.isPlaying && (

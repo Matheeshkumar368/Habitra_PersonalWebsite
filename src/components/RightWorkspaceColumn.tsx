@@ -172,53 +172,96 @@ export const RightWorkspaceColumn: React.FC<RightWorkspaceColumnProps> = ({
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
-    const audioFiles = Array.from(files).filter(
+    const fileList = Array.from(files);
+    const audioFiles = fileList.filter(
       (f) =>
         f.type.startsWith('audio/') ||
         /\.(mp3|wav|ogg|flac|m4a|aac|webm)$/i.test(f.name)
     );
 
+    const videoOnlyFiles = fileList.filter(
+      (f) =>
+        (f.type.startsWith('video/') || /\.(mp4|mov)$/i.test(f.name)) &&
+        !/\.(webm)$/i.test(f.name)
+    );
+
     if (audioFiles.length === 0) {
-      setUploadStatusMsg('⚠ No supported audio files (.mp3, .wav, .ogg, .flac, .m4a) found in selection.');
-      window.setTimeout(() => setUploadStatusMsg(null), 4000);
+      if (videoOnlyFiles.length > 0) {
+        setUploadStatusMsg(
+          `⚠ "${videoOnlyFiles[0].name}" is a video file. To use videos as Realm Portal backgrounds, upload it in "Customize Space > Custom Backdrop".`
+        );
+      } else {
+        setUploadStatusMsg(
+          '⚠ No supported audio files (.mp3, .wav, .ogg, .flac, .m4a, .aac, .webm) found in selection.'
+        );
+      }
+      window.setTimeout(() => setUploadStatusMsg(null), 5000);
       e.target.value = '';
       return;
     }
 
     setUploadingAudio(true);
+    let importedCount = 0;
+    let duplicateCount = 0;
+    const existingNames = new Set(
+      audio.customTracks.map((t) => t.name.trim().toLowerCase())
+    );
+
     try {
-      const readPromises = audioFiles.map(
-        (file) =>
-          new Promise<CustomAudioTrack>((resolve, reject) => {
+      const newTracks: CustomAudioTrack[] = [];
+      for (const file of audioFiles) {
+        const lastDotIdx = file.name.lastIndexOf('.');
+        const cleanName =
+          (lastDotIdx > 0 ? file.name.substring(0, lastDotIdx) : file.name).trim() ||
+          'Untitled Track';
+
+        if (existingNames.has(cleanName.toLowerCase())) {
+          duplicateCount++;
+          continue;
+        }
+
+        try {
+          const dataUrl = await new Promise<string>((resolve, reject) => {
             const reader = new FileReader();
-            reader.onload = () => {
-              const relPath = (file as File & { webkitRelativePath?: string })
-                .webkitRelativePath;
-              const folderParts = relPath ? relPath.split('/') : [];
-              const folderName =
-                folderParts.length > 1 ? folderParts[0] : undefined;
-              resolve({
-                id: `custom_${Date.now()}_${Math.random()
-                  .toString(36)
-                  .slice(2, 7)}`,
-                name: file.name.replace(/\.[^/.]+$/, ''),
-                dataUrl: String(reader.result || ''),
-                category: 'custom',
-                folderName,
-              });
-            };
+            reader.onload = () => resolve(String(reader.result || ''));
             reader.onerror = () => reject(reader.error);
             reader.readAsDataURL(file);
-          })
-      );
+          });
 
-      const newTracks = await Promise.all(readPromises);
+          const relPath = (file as File & { webkitRelativePath?: string })
+            .webkitRelativePath;
+          const folderParts = relPath ? relPath.split('/') : [];
+          const folderName =
+            folderParts.length > 1 ? folderParts[0].trim() : undefined;
+
+          newTracks.push({
+            id: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            name: cleanName,
+            dataUrl,
+            category: 'custom',
+            folderName,
+          });
+          existingNames.add(cleanName.toLowerCase());
+          importedCount++;
+        } catch {
+          // ignore single read error
+        }
+      }
+
       if (newTracks.length > 0) {
         onUploadLocalTracks(newTracks);
+        soundEngine.playNotification('success');
+        let msg = `✓ Imported ${importedCount} local audio track${
+          importedCount > 1 ? 's' : ''
+        }`;
+        if (duplicateCount > 0) {
+          msg += ` (${duplicateCount} duplicate${duplicateCount > 1 ? 's' : ''} skipped)`;
+        }
+        setUploadStatusMsg(msg);
+        window.setTimeout(() => setUploadStatusMsg(null), 4000);
+      } else if (duplicateCount > 0) {
         setUploadStatusMsg(
-          `✓ Imported ${newTracks.length} local audio track${
-            newTracks.length > 1 ? 's' : ''
-          }`
+          `ℹ All ${duplicateCount} selected file(s) are already in your library.`
         );
         window.setTimeout(() => setUploadStatusMsg(null), 3500);
       }
@@ -361,6 +404,9 @@ export const RightWorkspaceColumn: React.FC<RightWorkspaceColumnProps> = ({
               src={coverScene.imageUrl}
               alt="Focus timer ambient backdrop"
               referrerPolicy="no-referrer"
+              onError={(e) => {
+                (e.currentTarget as HTMLElement).style.display = 'none';
+              }}
               className="absolute inset-0 w-full h-full object-cover opacity-30 pointer-events-none"
             />
           )}
@@ -704,6 +750,9 @@ export const RightWorkspaceColumn: React.FC<RightWorkspaceColumnProps> = ({
                 src={coverScene.imageUrl}
                 alt={trackTitle}
                 referrerPolicy="no-referrer"
+                onError={(e) => {
+                  (e.currentTarget as HTMLElement).style.display = 'none';
+                }}
                 className="w-full h-full object-cover"
               />
             ) : (

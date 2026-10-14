@@ -357,11 +357,11 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-start justify-center pt-20 p-4 bg-black/75 backdrop-blur-md animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-start justify-center pt-10 sm:pt-20 p-4 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl rounded-2xl bg-[#111827] border border-white/15 shadow-2xl overflow-hidden text-slate-100"
+        className="w-full max-w-2xl rounded-2xl bg-[#111827] border border-white/15 shadow-2xl overflow-hidden text-slate-100 my-auto"
         onClick={(e) => e.stopPropagation()}
         onKeyDown={handleKeyDown}
       >
@@ -473,11 +473,11 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-xl rounded-2xl bg-[#111827] border border-white/15 shadow-2xl overflow-hidden text-slate-100"
+        className="w-full max-w-xl rounded-2xl bg-[#111827] border border-white/15 shadow-2xl overflow-hidden text-slate-100 my-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-5 py-4 border-b border-white/10 bg-[#0b0f19]/60">
@@ -748,11 +748,11 @@ export const DailyJournalModal: React.FC<DailyJournalModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fadeIn"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/75 backdrop-blur-md animate-fadeIn overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-2xl rounded-2xl bg-[#111827] border border-white/15 shadow-2xl overflow-hidden text-slate-100"
+        className="w-full max-w-2xl rounded-2xl bg-[#111827] border border-white/15 shadow-2xl overflow-hidden text-slate-100 my-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between px-6 py-4 border-b border-white/10 bg-[#0b0f19]/60">

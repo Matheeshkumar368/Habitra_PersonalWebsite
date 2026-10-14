@@ -605,11 +605,11 @@ export const PasswordSetupModal: React.FC<PasswordSetupModalProps> = ({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4"
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto"
       onClick={onClose}
     >
       <div
-        className="w-full max-w-md rounded-2xl bg-[#111827] border border-slate-700/80 p-6 shadow-2xl"
+        className="w-full max-w-md rounded-2xl bg-[#111827] border border-slate-700/80 p-6 shadow-2xl my-auto max-h-[calc(100vh-2rem)] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-4">

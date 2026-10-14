@@ -158,7 +158,11 @@ export const HabitCalendarSection: React.FC<HabitCalendarSectionProps> = ({
         </div>
       ) : (
         <div className="overflow-x-auto pb-1">
-          <table className="w-full border-collapse min-w-[680px]">
+          <table
+            className={`w-full border-collapse ${
+              pageSlice === 'all' ? 'min-w-[980px]' : 'min-w-[640px]'
+            }`}
+          >
             <thead>
               <tr className="border-b border-slate-800/80">
                 <th className="py-2.5 pr-4 text-left text-xs font-medium text-slate-400 w-44">

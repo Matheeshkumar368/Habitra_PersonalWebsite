@@ -26,9 +26,17 @@ import {
   Maximize2,
   BarChart2,
   Music,
+  Camera,
+  Menu,
+  X,
+  Play,
+  Pause,
+  RotateCcw,
+  SkipForward,
 } from 'lucide-react';
 import { soundEngine } from './audio/soundEngine';
 import { CustomizeSpaceView } from './components/CustomizeSpaceView';
+import { DailyCameraUpdateView } from './components/DailyCameraUpdateView';
 import { HabitCalendarSection } from './components/HabitCalendarSection';
 import {
   computeWorldStage,
@@ -93,6 +101,7 @@ import {
   AppDataState,
   AudioSettings,
   CustomAudioTrack,
+  DailyPhotoUpdate,
   EnvironmentSettings,
   Goal,
   Habit,
@@ -128,7 +137,17 @@ export function App() {
   );
 
   const [activeTab, setActiveTab] = useState<NavigationTab>('dashboard');
+
+  const handleSelectTab = (tab: NavigationTab) => {
+    soundEngine.playTabSwitch();
+    setActiveTab(tab);
+    setMobileMenuOpen(false);
+  };
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [cameraPreselectedHabitId, setCameraPreselectedHabitId] = useState<
+    string | null
+  >(null);
   const [ambientModeOpen, setAmbientModeOpen] = useState(false);
 
   // Selected date for "Today's Habits" & KPI inspection (defaults to today)
@@ -1185,6 +1204,9 @@ export function App() {
   };
 
   const handleUpdateEnvironment = (patch: Partial<EnvironmentSettings>) => {
+    if (patch.sceneId && patch.sceneId !== appState.environment.sceneId) {
+      soundEngine.playRealmTravel();
+    }
     setAppState((prev) => {
       const nextEnv = { ...prev.environment, ...patch };
       let nextAudio = prev.audio;
@@ -1209,6 +1231,7 @@ export function App() {
   };
 
   const handleUpdateStyle = (patch: Partial<StyleSettings>) => {
+    soundEngine.playUiClick();
     setAppState((prev) => ({
       ...prev,
       style: { ...prev.style, ...patch },
@@ -1217,6 +1240,18 @@ export function App() {
   };
 
   const handleUpdateAudio = (patch: Partial<AudioSettings>) => {
+    if (
+      patch.isPlaying !== undefined &&
+      patch.isPlaying !== appState.audio.isPlaying
+    ) {
+      soundEngine.playMediaAction(patch.isPlaying ? 'play' : 'pause');
+    }
+    if (
+      patch.currentTrackId &&
+      patch.currentTrackId !== appState.audio.currentTrackId
+    ) {
+      soundEngine.playMediaAction('skip');
+    }
     setAppState((prev) => ({
       ...prev,
       audio: { ...prev.audio, ...patch },
@@ -1572,6 +1607,7 @@ export function App() {
     setTimerBannerMessage(null);
     setIsTimerRunning((currentlyRunning) => {
       const nextRunning = !currentlyRunning;
+      soundEngine.playTimerAction(nextRunning ? 'start' : 'pause');
       const nowMs = Date.now();
       setAppState((prev) => ({
         ...prev,
@@ -1591,6 +1627,7 @@ export function App() {
   };
 
   const handleResetTimer = () => {
+    soundEngine.playTimerAction('reset');
     setIsTimerRunning(false);
     setTimerBannerMessage(null);
     const secs =
@@ -1694,6 +1731,41 @@ export function App() {
           updatedAt: stampSaveTime(),
         },
       },
+      profile: { ...prev.profile, lastSavedAt: stampSaveTime() },
+    }));
+  };
+
+  const handleOpenCameraForHabit = (habitId?: string) => {
+    setCameraPreselectedHabitId(habitId || null);
+    setActiveTab('dailylog');
+  };
+
+  const handleAddDailyUpdate = (
+    update: Omit<DailyPhotoUpdate, 'id'>,
+    markHabitDone: boolean
+  ) => {
+    const newEntry: DailyPhotoUpdate = {
+      ...update,
+      id: `photo_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+    };
+    setAppState((prev) => {
+      const nextCompletions = { ...prev.completions };
+      if (markHabitDone && update.habitId) {
+        nextCompletions[`${update.habitId}_${update.dateStr}`] = true;
+      }
+      return {
+        ...prev,
+        completions: nextCompletions,
+        dailyUpdates: [newEntry, ...(prev.dailyUpdates || [])],
+        profile: { ...prev.profile, lastSavedAt: stampSaveTime() },
+      };
+    });
+  };
+
+  const handleDeleteDailyUpdate = (id: string) => {
+    setAppState((prev) => ({
+      ...prev,
+      dailyUpdates: (prev.dailyUpdates || []).filter((u) => u.id !== id),
       profile: { ...prev.profile, lastSavedAt: stampSaveTime() },
     }));
   };
@@ -1994,19 +2066,94 @@ export function App() {
   const navItems: {
     id: NavigationTab;
     label: string;
+    subtitle: string;
+    group: 'Daily Tracking' | 'Focus & Audio' | 'Insights & Space';
     icon: React.ElementType;
   }[] = [
-    { id: 'dashboard', label: 'Dashboard', icon: Home },
-    { id: 'habits', label: 'Habits', icon: CheckSquare },
-    { id: 'calendar', label: 'Calendar', icon: CalendarIcon },
-    { id: 'goals', label: 'Goals', icon: Target },
-    { id: 'timer', label: 'Timer', icon: TimerIcon },
-    { id: 'music', label: 'Music', icon: Music },
-    { id: 'reminders', label: 'Reminders', icon: Bell },
-    { id: 'statistics', label: 'Statistics', icon: BarChart3 },
-    { id: 'myspace', label: 'My Space', icon: Sparkles },
-    { id: 'settings', label: 'Settings', icon: Settings },
+    {
+      id: 'dashboard',
+      label: 'Dashboard',
+      subtitle: 'Daily overview & sanctuary',
+      group: 'Daily Tracking',
+      icon: Home,
+    },
+    {
+      id: 'habits',
+      label: 'Habits',
+      subtitle: 'Manage & track all habits',
+      group: 'Daily Tracking',
+      icon: CheckSquare,
+    },
+    {
+      id: 'dailylog',
+      label: 'Daily Camera',
+      subtitle: 'Photo check-ins & visual log',
+      group: 'Daily Tracking',
+      icon: Camera,
+    },
+    {
+      id: 'calendar',
+      label: 'Calendar',
+      subtitle: 'Monthly completion matrix',
+      group: 'Daily Tracking',
+      icon: CalendarIcon,
+    },
+    {
+      id: 'goals',
+      label: 'Goals',
+      subtitle: 'Long-term milestones',
+      group: 'Daily Tracking',
+      icon: Target,
+    },
+    {
+      id: 'timer',
+      label: 'Focus Timer',
+      subtitle: 'Pomodoro & deep work studio',
+      group: 'Focus & Audio',
+      icon: TimerIcon,
+    },
+    {
+      id: 'music',
+      label: 'Music Player',
+      subtitle: 'Lo-Fi tracks & ambient mixer',
+      group: 'Focus & Audio',
+      icon: Music,
+    },
+    {
+      id: 'reminders',
+      label: 'Reminders',
+      subtitle: 'Alerts & water hydration',
+      group: 'Focus & Audio',
+      icon: Bell,
+    },
+    {
+      id: 'statistics',
+      label: 'Statistics',
+      subtitle: 'Streaks, XP & analytics',
+      group: 'Insights & Space',
+      icon: BarChart3,
+    },
+    {
+      id: 'myspace',
+      label: 'My Space',
+      subtitle: 'Customize scenes & theme',
+      group: 'Insights & Space',
+      icon: Sparkles,
+    },
+    {
+      id: 'settings',
+      label: 'Settings',
+      subtitle: 'Profile, lock & local backup',
+      group: 'Insights & Space',
+      icon: Settings,
+    },
   ];
+
+  const activeNavMeta =
+    navItems.find((item) => item.id === activeTab) || navItems[0];
+  const ActiveSectionIcon = activeNavMeta.icon;
+  const navGroups: ('Daily Tracking' | 'Focus & Audio' | 'Insights & Space')[] =
+    ['Daily Tracking', 'Focus & Audio', 'Insights & Space'];
 
   const sidebarPosterScene =
     PIXEL_SCENES.find((s) => s.id === 'living_sanctuary') || PIXEL_SCENES[0];
@@ -2145,13 +2292,13 @@ export function App() {
 
       {/* LEFT SIDEBAR NAVIGATION (Desktop & Laptop) */}
       <aside
-        className={`hidden md:flex flex-col justify-between shrink-0 border-r border-slate-800/80 bg-[#0d1322]/95 backdrop-blur-xl z-20 transition-all duration-200 ${
-          sidebarCollapsed ? 'w-[74px]' : 'w-[230px]'
+        className={`hidden md:flex flex-col justify-between shrink-0 border-r border-slate-800/80 bg-[#0d1322]/95 backdrop-blur-xl z-20 transition-all duration-200 sticky top-0 h-screen overflow-hidden ${
+          sidebarCollapsed ? 'w-[74px]' : 'w-[240px]'
         }`}
       >
-        <div className="p-3.5">
+        <div className="p-3.5 flex-1 min-h-0 flex flex-col overflow-y-auto">
           {/* Brand Title Row */}
-          <div className="flex items-center justify-between gap-2 px-1.5 py-2 mb-4">
+          <div className="flex items-center justify-between gap-2 px-1.5 py-2 mb-3">
             <div className="flex items-center gap-2.5 min-w-0">
               <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center text-base shrink-0">
                 🏡
@@ -2181,31 +2328,60 @@ export function App() {
             </button>
           </div>
 
-          {/* Nav Links */}
-          <nav className="space-y-1">
-            {navItems.map((item) => {
-              const Icon = item.icon;
-              const active = activeTab === item.id;
+          {/* Categorized Nav Links */}
+          <nav className="space-y-4">
+            {navGroups.map((groupName) => {
+              const itemsInGroup = navItems.filter(
+                (i) => i.group === groupName
+              );
               return (
-                <button
-                  key={item.id}
-                  type="button"
-                  onClick={() => setActiveTab(item.id)}
-                  className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
-                    active
-                      ? 'text-white shadow-md'
-                      : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'
-                  }`}
-                  style={
-                    active
-                      ? { backgroundColor: appState.style.accentColor }
-                      : undefined
-                  }
-                  title={sidebarCollapsed ? item.label : undefined}
-                >
-                  <Icon className="w-4 h-4 shrink-0" />
-                  {!sidebarCollapsed && <span>{item.label}</span>}
-                </button>
+                <div key={groupName} className="space-y-1">
+                  {!sidebarCollapsed && (
+                    <div className="px-2.5 pb-1 text-[10px] font-semibold text-slate-500 tracking-wider">
+                      {groupName}
+                    </div>
+                  )}
+                  {itemsInGroup.map((item) => {
+                    const Icon = item.icon;
+                    const active = activeTab === item.id;
+                    return (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => handleSelectTab(item.id)}
+                        className={`w-full flex items-center justify-between gap-2.5 px-3 py-2 rounded-xl text-xs font-medium transition-all cursor-pointer whitespace-nowrap ${
+                          active
+                            ? 'text-white shadow-md'
+                            : 'text-slate-400 hover:text-slate-100 hover:bg-slate-800/50'
+                        }`}
+                        style={
+                          active
+                            ? { backgroundColor: appState.style.accentColor }
+                            : undefined
+                        }
+                        title={
+                          sidebarCollapsed
+                            ? `${item.label} — ${item.subtitle}`
+                            : item.subtitle
+                        }
+                      >
+                        <div className="flex items-center gap-3 min-w-0">
+                          <Icon className="w-4 h-4 shrink-0" />
+                          {!sidebarCollapsed && (
+                            <span className="truncate">{item.label}</span>
+                          )}
+                        </div>
+                        {!sidebarCollapsed &&
+                          item.id === 'dailylog' &&
+                          (appState.dailyUpdates || []).length > 0 && (
+                            <span className="text-[10px] font-mono-tabular opacity-80">
+                              {(appState.dailyUpdates || []).length}
+                            </span>
+                          )}
+                      </button>
+                    );
+                  })}
+                </div>
               );
             })}
           </nav>
@@ -2213,21 +2389,24 @@ export function App() {
 
         {/* Bottom Cozy Pixel Vignette & Quote */}
         {!sidebarCollapsed && !appState.environment.minimalMode && (
-          <div className="p-3.5">
+          <div className="p-3.5 shrink-0">
             <div className="rounded-2xl overflow-hidden border border-slate-800/90 bg-slate-950/90">
               {sidebarPosterScene.imageUrl && (
-                <div className="h-36 w-full relative overflow-hidden">
+                <div className="h-24 w-full relative overflow-hidden">
                   <img
                     src={sidebarPosterScene.imageUrl}
                     alt="Cozy study motivation"
                     referrerPolicy="no-referrer"
+                    onError={(e) => {
+                      (e.currentTarget as HTMLElement).style.display = 'none';
+                    }}
                     className="w-full h-full object-cover"
                   />
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent" />
                 </div>
               )}
-              <div className="p-3 text-center">
-                <p className="text-xs text-slate-300 leading-relaxed font-medium">
+              <div className="p-2 text-center">
+                <p className="text-[11px] text-slate-300 leading-relaxed font-medium line-clamp-2">
                   {appState.profile.sidebarQuote}
                 </p>
               </div>
@@ -2236,511 +2415,372 @@ export function App() {
         )}
       </aside>
 
-      {/* MAIN WORKSPACE CONTENT + RIGHT COLUMN */}
-      <div className="flex-1 flex flex-col min-w-0 z-10 pb-20 md:pb-6">
-        <div className="flex-1 flex flex-col xl:flex-row gap-4 p-3 sm:p-4 max-w-[1660px] w-full mx-auto">
-          {/* CENTER MAIN COLUMN */}
-          <main className="flex-1 min-w-0 space-y-4">
-            {/* HERO PIXEL-ART ENVIRONMENT BANNER WITH FLOATING CONTROLS & KPI STRIP */}
-            {!appState.environment.minimalMode ? (
-              <div className="relative rounded-2xl overflow-hidden border border-slate-800/90 shadow-2xl">
-                <PixelEnvironmentCanvas
-                  environment={appState.environment}
-                  styleSettings={appState.style}
-                  isFocusTimerRunning={isTimerRunning}
-                  roomLayout={appState.roomLayout}
-                  unlockedObjectIds={unlockedObjectIds}
-                  lowPowerBackgroundMode={
-                    appState.profile.lowPowerBackgroundMode !== false
-                  }
-                  hotspotContext={{
-                    dailyProgressPercent: stats.dailyProgressPercent,
-                    completedToday: stats.completedToday,
-                    totalHabits: stats.totalHabits,
-                    currentStreak: stats.overallCurrentStreak,
-                    timerFormatted: timerFormattedStr,
-                    isMusicPlaying: appState.audio.isPlaying,
-                    currentTrackTitle: currentTrackObj?.title || 'Velvet Rain Lo-Fi',
-                    activeGoalsCount: computedGoals.filter((g) => !g.archived)
-                      .length,
-                    worldStageName: worldStage.name,
-                    onNavigateTab: (tab) => setActiveTab(tab),
-                    onToggleFocusTimer: handleStartPauseTimer,
-                    onToggleMusicPlay: () =>
-                      handleUpdateAudio({ isPlaying: !appState.audio.isPlaying }),
-                    onOpenJournal: () => {
-                      setJournalDateStr(selectedDateStr);
-                      setJournalModalOpen(true);
-                    },
-                    onCycleTimeOfDay: () => {
-                      const order: ('morning' | 'afternoon' | 'evening' | 'night')[] = [
-                        'morning',
-                        'afternoon',
-                        'evening',
-                        'night',
-                      ];
-                      const cur =
-                        appState.environment.timeOfDay === 'auto'
-                          ? 'night'
-                          : appState.environment.timeOfDay;
-                      const next = order[(order.indexOf(cur) + 1) % order.length];
-                      soundEngine.playHabitCheck(true);
-                      handleUpdateEnvironment({ timeOfDay: next });
-                    },
-                    onCycleScenePortal: () => {
-                      const idx = PIXEL_SCENES.findIndex(
-                        (s) => s.id === appState.environment.sceneId
-                      );
-                      const next =
-                        PIXEL_SCENES[(idx + 1) % PIXEL_SCENES.length];
-                      soundEngine.playHabitCheck(true);
-                      handleUpdateEnvironment({
-                        sceneId: next.id,
-                        weather: next.defaultWeather,
-                      });
-                    },
-                    onScrollToSection: (sectionId) => {
-                      setActiveTab('dashboard');
-                      handleUpdateEnvironment({ worldViewMode: 'living_world' });
-                      window.setTimeout(() => {
-                        const el = document.getElementById(sectionId);
-                        if (el) {
-                          el.scrollIntoView({ behavior: 'smooth', block: 'start' });
-                        }
-                      }, 80);
-                    },
-                  }}
-                  className={
-                    activeTab === 'dashboard' && isLivingWorldMode
-                      ? 'w-full h-[390px] sm:h-[440px]'
-                      : 'w-full h-[330px] sm:h-[360px]'
-                  }
-                />
-
-                {/* Top Floating Overlay Bar inside Environment */}
-                <div className="absolute top-3.5 left-4 right-4 flex flex-wrap items-center justify-between gap-2 z-10">
-                  {/* Left: Autosave Indicator + World View Switcher + Ambient Mode + Setup */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    <div className="px-3 py-1.5 rounded-xl bg-slate-950/85 border border-slate-800/90 backdrop-blur-md text-xs flex items-center gap-2">
-                      {saveStatus === 'saving' && (
-                        <span className="text-amber-300 font-medium">
-                          Saving...
-                        </span>
-                      )}
-                      {saveStatus === 'saved' && (
-                        <span className="text-emerald-400 font-medium">
-                          ✓ Saved locally
-                        </span>
-                      )}
-                      {saveStatus === 'error' && (
-                        <span className="text-rose-400 font-medium">
-                          ⚠ Save failed — retrying
-                        </span>
-                      )}
-                    </div>
-
-                    {/* Living World vs Classic Studio Mode Switcher */}
-                    <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-950/85 border border-slate-800/90 backdrop-blur-md">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveTab('dashboard');
-                          handleUpdateEnvironment({
-                            worldViewMode: 'living_world',
-                          });
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                          isLivingWorldMode
-                            ? 'bg-teal-500/25 text-teal-200 border border-teal-400/40'
-                            : 'text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        🏝️ Living World
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setActiveTab('dashboard');
-                          handleUpdateEnvironment({
-                            worldViewMode: 'classic_studio',
-                          });
-                        }}
-                        className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                          !isLivingWorldMode
-                            ? 'bg-indigo-500/25 text-indigo-200 border border-indigo-400/40'
-                            : 'text-slate-400 hover:text-white'
-                        }`}
-                      >
-                        📊 Studio Grid
-                      </button>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => setAmbientModeOpen(true)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600/85 hover:bg-indigo-500 border border-indigo-400/50 backdrop-blur-md text-xs font-medium text-white transition-colors cursor-pointer whitespace-nowrap shadow"
-                      title="Enter Full-Screen Ambient Mode (Shortcut: F)"
-                    >
-                      <Maximize2 className="w-3.5 h-3.5" />
-                      <span>Ambient Mode</span>
-                    </button>
-
-                    <button
-                      type="button"
-                      onClick={() => setWelcomeModalOpen(true)}
-                      className="hidden sm:flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/75 hover:bg-slate-900 border border-slate-800/90 backdrop-blur-md text-xs text-slate-300 hover:text-white transition-colors cursor-pointer whitespace-nowrap"
-                    >
-                      <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                      <span>Space Setup</span>
-                    </button>
+      {/* MOBILE SLIDE-OVER NAVIGATION DRAWER */}
+      {mobileMenuOpen && (
+        <div
+          className="md:hidden fixed inset-0 z-50 bg-black/75 backdrop-blur-xs flex"
+          onClick={() => setMobileMenuOpen(false)}
+        >
+          <div
+            className="w-72 max-w-[85vw] bg-[#0d1322] border-r border-slate-800 h-full p-4 flex flex-col justify-between overflow-y-auto"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div>
+              <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center text-base">
+                    🏡
                   </div>
-
-                  {/* Right: Date Picker, Scene Switcher, Search, Notifications, Lock */}
-                  <div className="flex flex-wrap items-center gap-2">
-                    {/* Date Navigation Control */}
-                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-950/80 border border-slate-800/90 backdrop-blur-md text-xs">
-                      <CalendarIcon className="w-3.5 h-3.5 text-indigo-400" />
-                      <div className="leading-tight px-1">
-                        <div className="text-[10px] text-slate-400">
-                          {selectedDate.toLocaleDateString('en-US', {
-                            weekday: 'long',
-                          })}
-                        </div>
-                        <div className="font-semibold text-white whitespace-nowrap">
-                          {selectedDate.toLocaleDateString('en-US', {
-                            month: 'short',
-                            day: 'numeric',
-                            year: 'numeric',
-                          })}
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const d = new Date(selectedDate);
-                          d.setDate(d.getDate() - 1);
-                          setSelectedDate(d);
-                        }}
-                        className="p-1 rounded-lg hover:bg-slate-800 text-slate-300 cursor-pointer"
-                        title="Previous Day"
-                      >
-                        <ChevronLeft className="w-3.5 h-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setSelectedDate(new Date())}
-                        className="p-1 rounded-lg hover:bg-slate-800 text-slate-300 cursor-pointer"
-                        title="Jump to Today"
-                      >
-                        <ChevronRight className="w-3.5 h-3.5" />
-                      </button>
+                  <div>
+                    <div className="text-sm font-bold text-white">
+                      {appState.profile.appName || 'Habitra'}
                     </div>
+                    <div className="text-[10px] text-slate-400">
+                      All Sections
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setMobileMenuOpen(false)}
+                  className="p-1.5 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800 cursor-pointer"
+                >
+                  <X className="w-4 h-4" />
+                </button>
+              </div>
 
-                    {/* Scene Quick Switcher */}
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const idx = PIXEL_SCENES.findIndex(
-                          (s) => s.id === appState.environment.sceneId
+              <div className="space-y-4">
+                {navGroups.map((groupName) => (
+                  <div key={groupName} className="space-y-1">
+                    <div className="px-2 text-[10px] font-semibold text-slate-500 tracking-wider">
+                      {groupName}
+                    </div>
+                    {navItems
+                      .filter((i) => i.group === groupName)
+                      .map((item) => {
+                        const Icon = item.icon;
+                        const active = activeTab === item.id;
+                        return (
+                          <button
+                            key={item.id}
+                            type="button"
+                            onClick={() => handleSelectTab(item.id)}
+                            className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-left transition-all cursor-pointer ${
+                              active
+                                ? 'text-white shadow-md'
+                                : 'text-slate-300 hover:bg-slate-800/60'
+                            }`}
+                            style={
+                              active
+                                ? {
+                                    backgroundColor:
+                                      appState.style.accentColor,
+                                  }
+                                : undefined
+                            }
+                          >
+                            <Icon className="w-4 h-4 shrink-0" />
+                            <div className="min-w-0">
+                              <div className="text-xs font-semibold truncate">
+                                {item.label}
+                              </div>
+                              <div
+                                className={`text-[10px] truncate ${
+                                  active ? 'text-white/80' : 'text-slate-400'
+                                }`}
+                              >
+                                {item.subtitle}
+                              </div>
+                            </div>
+                          </button>
                         );
-                        const next =
-                          PIXEL_SCENES[(idx + 1) % PIXEL_SCENES.length];
-                        handleUpdateEnvironment({
-                          sceneId: next.id,
-                          weather: next.defaultWeather,
-                        });
-                      }}
-                      className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/80 hover:bg-slate-900 border border-slate-800/90 backdrop-blur-md text-xs text-left transition-colors cursor-pointer"
-                      title="Click to switch pixel-art scene"
-                    >
-                      <span className="text-base">🌧️</span>
-                      <div className="leading-tight">
-                        <div className="text-[10px] text-slate-400 capitalize">
-                          {appState.environment.weather.replace('_', ' ')}{' '}
-                          {appState.environment.timeOfDay}
-                        </div>
-                        <div className="font-semibold text-white flex items-center gap-1 whitespace-nowrap">
-                          <span>{currentScene.name}</span>
-                          <Shuffle className="w-3 h-3 text-slate-400" />
-                        </div>
-                      </div>
-                    </button>
-
-                    {/* Utility Icons: Command Palette (Ctrl+K), Journal, Notifications, System Tray, Security Lock */}
-                    <div className="flex items-center gap-1.5">
-                      {pwaInstallPrompt && (
-                        <button
-                          type="button"
-                          onClick={async () => {
-                            await pwaInstallPrompt.prompt();
-                            setPwaInstallPrompt(null);
-                          }}
-                          className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 border border-emerald-400/40 text-white text-xs font-semibold backdrop-blur-md cursor-pointer"
-                          title="Install Habitra Desktop App"
-                        >
-                          <span>📲 Install App</span>
-                        </button>
-                      )}
-
-                      {appState.profile.xpEnabled !== false && (
-                        <button
-                          type="button"
-                          onClick={() => setActiveTab('statistics')}
-                          className="hidden lg:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-slate-950/85 hover:bg-slate-900 border border-indigo-500/40 text-indigo-300 text-xs font-mono-tabular backdrop-blur-md cursor-pointer"
-                          title={`Level ${xpStatus.level} (${xpStatus.levelTitle}) — ${xpStatus.totalXP} XP`}
-                        >
-                          <span>⚡ Lv.{xpStatus.level}</span>
-                          <span className="text-slate-300">{xpStatus.totalXP} XP</span>
-                        </button>
-                      )}
-
-                      <button
-                        type="button"
-                        onClick={() => setCommandPaletteOpen(true)}
-                        className="px-2.5 py-1.5 rounded-xl bg-slate-950/80 hover:bg-slate-900 border border-slate-800/90 text-slate-300 hover:text-white backdrop-blur-md cursor-pointer flex items-center gap-1.5 text-xs"
-                        title="Command Palette & Global Search (Ctrl+K)"
-                      >
-                        <Search className="w-3.5 h-3.5 text-indigo-400" />
-                        <span className="hidden md:inline text-[11px] text-slate-400">
-                          Ctrl+K
-                        </span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setJournalDateStr(selectedDateStr);
-                          setJournalModalOpen(true);
-                        }}
-                        className="p-2 rounded-xl bg-slate-950/80 hover:bg-slate-900 border border-slate-800/90 text-slate-300 hover:text-white backdrop-blur-md cursor-pointer"
-                        title="Today's Reflection Journal"
-                      >
-                        <span className="text-xs">📓</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setNotificationCenterOpen(true)}
-                        className="relative p-2 rounded-xl bg-slate-950/80 hover:bg-slate-900 border border-slate-800/90 text-slate-300 hover:text-white backdrop-blur-md cursor-pointer"
-                        title="Notification History & Background Alerts"
-                      >
-                        <Bell className="w-4 h-4" />
-                        {unreadNotificationCount > 0 && (
-                          <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
-                            {unreadNotificationCount}
-                          </span>
-                        )}
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={handleMinimizeToTray}
-                        className="p-2 rounded-xl bg-slate-950/80 hover:bg-slate-900 border border-slate-800/90 text-emerald-400 hover:text-emerald-300 backdrop-blur-md cursor-pointer"
-                        title="Minimize to System Tray (Background Mode)"
-                      >
-                        <span className="text-xs">🌱</span>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          if (appState.security.passwordHash) {
-                            handleUpdateSecurity({ isLocked: true });
-                          } else {
-                            setSecurityModalOpen(true);
-                          }
-                        }}
-                        className="p-2 rounded-xl bg-slate-950/80 hover:bg-slate-900 border border-slate-800/90 text-slate-300 hover:text-amber-300 backdrop-blur-md cursor-pointer"
-                        title={
-                          appState.security.passwordHash
-                            ? 'Lock Dashboard Now (Shortcut: L)'
-                            : 'Configure Dashboard Password Lock (Shortcut: L)'
-                        }
-                      >
-                        <Lock className="w-4 h-4" />
-                      </button>
-                    </div>
+                      })}
                   </div>
-                </div>
-
-                {/* Center-Left Greeting Overlay inside Pixel Room */}
-                <div className="absolute left-6 bottom-28 z-10 pointer-events-none max-w-md">
-                  <div className="text-base sm:text-lg text-slate-200 font-medium drop-shadow">
-                    {appState.profile.userName
-                      ? greetingText
-                      : greetingText.replace(',', '')}
-                  </div>
-                  <h1 className="text-2xl sm:text-4xl font-bold text-white tracking-tight flex items-center gap-2.5 mt-0.5 drop-shadow-md">
-                    <span>{appState.profile.userName || 'Sanctuary'}</span>
-                    <span className="text-2xl">🌙</span>
-                  </h1>
-                  <p className="text-xs sm:text-sm text-slate-200/90 mt-1.5 drop-shadow">
-                    “{appState.profile.quote}”
-                  </p>
-                </div>
-
-                {/* Bottom 7-Card KPI Strip inside Pixel Environment */}
-                <div className="absolute bottom-3 left-3 right-3 z-10">
-                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-                    {/* 1. Total Habits */}
-                    <div className="px-3 py-2.5 rounded-xl bg-slate-950/82 border border-slate-800/90 backdrop-blur-md flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-sky-500/20 border border-sky-400/30 flex items-center justify-center text-sky-400 shrink-0 text-sm">
-                        ☑️
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-[10px] text-slate-400 truncate">
-                          Total Habits
-                        </div>
-                        <div className="text-base font-bold text-white font-mono-tabular">
-                          {stats.totalHabits}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 2. Completed Today */}
-                    <div className="px-3 py-2.5 rounded-xl bg-slate-950/82 border border-slate-800/90 backdrop-blur-md flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shrink-0 text-sm">
-                        ✅
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-[10px] text-slate-400 truncate">
-                          Completed Today
-                        </div>
-                        <div className="text-base font-bold text-white font-mono-tabular">
-                          {stats.completedToday}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 3. Remaining Today */}
-                    <div className="px-3 py-2.5 rounded-xl bg-slate-950/82 border border-slate-800/90 backdrop-blur-md flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-rose-500/20 border border-rose-400/30 flex items-center justify-center text-rose-400 shrink-0 text-sm">
-                        📋
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-[10px] text-slate-400 truncate">
-                          Remaining Today
-                        </div>
-                        <div className="text-base font-bold text-white font-mono-tabular">
-                          {stats.remainingToday}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 4. Daily Progress */}
-                    <div className="px-3 py-2.5 rounded-xl bg-slate-950/82 border border-slate-800/90 backdrop-blur-md flex items-center gap-2.5">
-                      <MiniRingProgress
-                        percent={stats.dailyProgressPercent}
-                        color="#10b981"
-                      />
-                      <div className="min-w-0">
-                        <div className="text-[10px] text-slate-400 truncate">
-                          Daily Progress
-                        </div>
-                        <div className="text-base font-bold text-white font-mono-tabular">
-                          {stats.dailyProgressPercent}%
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 5. Weekly Progress */}
-                    <div className="px-3 py-2.5 rounded-xl bg-slate-950/82 border border-slate-800/90 backdrop-blur-md flex items-center gap-2.5">
-                      <MiniRingProgress
-                        percent={stats.weeklyProgressPercent}
-                        color="#22c55e"
-                      />
-                      <div className="min-w-0">
-                        <div className="text-[10px] text-slate-400 truncate">
-                          Weekly Progress
-                        </div>
-                        <div className="text-base font-bold text-white font-mono-tabular">
-                          {stats.weeklyProgressPercent}%
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 6. Current Streak */}
-                    <div className="px-3 py-2.5 rounded-xl bg-slate-950/82 border border-slate-800/90 backdrop-blur-md flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-400 shrink-0">
-                        <Flame className="w-4 h-4 fill-current" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-[10px] text-slate-400 truncate">
-                          Current Streak
-                        </div>
-                        <div className="text-sm font-bold text-white font-mono-tabular whitespace-nowrap">
-                          {stats.overallCurrentStreak} days
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* 7. Best Streak */}
-                    <div className="px-3 py-2.5 rounded-xl bg-slate-950/82 border border-slate-800/90 backdrop-blur-md flex items-center gap-2.5">
-                      <div className="w-8 h-8 rounded-lg bg-yellow-500/20 border border-yellow-400/30 flex items-center justify-center text-yellow-400 shrink-0">
-                        <Trophy className="w-4 h-4" />
-                      </div>
-                      <div className="min-w-0">
-                        <div className="text-[10px] text-slate-400 truncate">
-                          Best Streak
-                        </div>
-                        <div className="text-sm font-bold text-white font-mono-tabular whitespace-nowrap">
-                          {stats.overallBestStreak} days
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
+                ))}
               </div>
-            ) : (
-              /* Minimal Mode Compact Header */
-              <div
-                className="rounded-2xl border border-slate-800/90 p-4 flex flex-wrap items-center justify-between gap-3"
-                style={panelBgStyle}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MAIN WORKSPACE CONTAINER (Dedicated Single-Section Layout) */}
+      <div className="flex-1 flex flex-col min-w-0 z-10 pb-20 md:pb-8">
+        <div className="flex-1 flex flex-col gap-4 p-3 sm:p-5 max-w-[1440px] w-full mx-auto">
+          {/* CLEAN UNIFIED TOP WORKSPACE HEADER BAR (Mobile & Laptop) */}
+          <header
+            className="rounded-2xl border border-slate-800/90 px-4 py-3 shadow-lg flex flex-wrap items-center justify-between gap-3"
+            style={panelBgStyle}
+          >
+            {/* Left: Mobile Menu Trigger + Active Section Title & Subtitle */}
+            <div className="flex items-center gap-3 min-w-0">
+              <button
+                type="button"
+                onClick={() => setMobileMenuOpen(true)}
+                className="md:hidden p-2 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-slate-200 cursor-pointer shrink-0"
+                title="Open All Sections Menu"
               >
-                <div>
-                  <h1 className="text-lg font-bold text-white">
-                    {appState.profile.userName &&
-                    appState.profile.userName.trim()
-                      ? `${greetingText} ${appState.profile.userName.trim()}`
-                      : greetingText.replace(',', '')}
+                <Menu className="w-4 h-4" />
+              </button>
+
+              <div
+                className="w-9 h-9 rounded-xl flex items-center justify-center text-white shrink-0 border border-white/15"
+                style={{ backgroundColor: `${appState.style.accentColor}33` }}
+              >
+                <ActiveSectionIcon className="w-4 h-4" />
+              </div>
+
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <h1 className="text-sm sm:text-base font-bold text-white tracking-tight truncate">
+                    {activeNavMeta.label}
                   </h1>
-                  <p className="text-xs text-slate-400">
-                    Minimal Mode · {stats.completedToday}/{stats.totalHabits}{' '}
-                    completed today ({stats.dailyProgressPercent}%) · 🔥{' '}
-                    {stats.overallCurrentStreak}d streak
-                  </p>
+                  <span className="hidden sm:inline text-xs text-slate-500">
+                    ·
+                  </span>
+                  <span className="hidden sm:inline text-xs text-slate-400 truncate">
+                    {activeNavMeta.subtitle}
+                  </span>
                 </div>
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-emerald-400">
-                    {saveStatus === 'saving'
-                      ? '● Saving...'
-                      : saveStatus === 'error'
-                      ? '⚠ Save failed — retrying'
-                      : '✓ Saved locally'}
-                  </span>
-                  <span className="text-xs text-slate-400">
-                    · ● Offline / Local
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setAmbientModeOpen(true)}
-                    className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-xs text-white flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Maximize2 className="w-3.5 h-3.5" />
-                    <span>Ambient Mode</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleUpdateEnvironment({ minimalMode: false })}
-                    className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs text-white flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Eye className="w-3.5 h-3.5" />
-                    <span>Show Pixel Scene</span>
-                  </button>
+                <div className="flex items-center gap-2 text-[11px] text-slate-400">
+                  {saveStatus === 'saving' ? (
+                    <span className="text-amber-300">Saving...</span>
+                  ) : saveStatus === 'error' ? (
+                    <span className="text-rose-400">⚠ Save retrying</span>
+                  ) : (
+                    <span className="text-emerald-400">✓ Saved locally</span>
+                  )}
+                  {appState.profile.xpEnabled !== false && (
+                    <>
+                      <span aria-hidden="true">·</span>
+                      <button
+                        type="button"
+                        onClick={() => setActiveTab('statistics')}
+                        className="font-mono-tabular text-indigo-300 hover:text-indigo-200 cursor-pointer"
+                      >
+                        Lv.{xpStatus.level} ({xpStatus.totalXP} XP)
+                      </button>
+                    </>
+                  )}
                 </div>
               </div>
-            )}
+            </div>
 
+            {/* Right: Background Timer/Audio Status Pills + Date Control + Quick Actions */}
+            <div className="flex flex-wrap items-center gap-2">
+              {/* Compact Focus Timer Status Button when on another tab */}
+              {activeTab !== 'timer' && (isTimerRunning || appState.timer.timerStatus === 'paused') && (
+                <button
+                  type="button"
+                  onClick={() => setActiveTab('timer')}
+                  className="px-3 py-1.5 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/40 text-xs font-mono-tabular text-indigo-200 flex items-center gap-1.5 cursor-pointer"
+                  title="Go to Focus Timer"
+                >
+                  <TimerIcon className="w-3.5 h-3.5 text-indigo-400" />
+                  <span>{timerFormattedStr}</span>
+                </button>
+              )}
+
+              {/* Compact Music Status Pill when Music is playing and user is on another tab */}
+              {activeTab !== 'music' && appState.audio.isPlaying && (
+                <div className="flex items-center gap-1 px-2.5 py-1 rounded-xl bg-amber-500/15 border border-amber-400/35 text-xs text-amber-200">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleUpdateAudio({ isPlaying: !appState.audio.isPlaying })
+                    }
+                    className="p-1 rounded hover:bg-white/10 cursor-pointer"
+                    title="Pause Music"
+                  >
+                    <Pause className="w-3 h-3 fill-current" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleSelectTab('music')}
+                    className="max-w-[120px] truncate font-medium hover:underline cursor-pointer"
+                    title="Open Music Studio"
+                  >
+                    {currentTrackObj?.title || 'Music Playing'}
+                  </button>
+                </div>
+              )}
+
+              {/* Dashboard View Mode Toggle (only shown on Dashboard) */}
+              {activeTab === 'dashboard' && (
+                <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-950/85 border border-slate-800/90">
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleUpdateEnvironment({
+                        worldViewMode: 'living_world',
+                      })
+                    }
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                      isLivingWorldMode
+                        ? 'bg-teal-500/25 text-teal-200 border border-teal-400/40'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Living World
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() =>
+                      handleUpdateEnvironment({
+                        worldViewMode: 'classic_studio',
+                      })
+                    }
+                    className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
+                      !isLivingWorldMode
+                        ? 'bg-indigo-500/25 text-indigo-200 border border-indigo-400/40'
+                        : 'text-slate-400 hover:text-white'
+                    }`}
+                  >
+                    Studio Grid
+                  </button>
+                </div>
+              )}
+
+              {/* Date Picker (shown on daily tracking sections: Dashboard, Habits, Daily Camera) */}
+              {(activeTab === 'dashboard' ||
+                activeTab === 'habits' ||
+                activeTab === 'dailylog') && (
+                <div className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl bg-slate-950/85 border border-slate-800/90 text-xs">
+                  <CalendarIcon className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                  <span className="font-semibold text-white whitespace-nowrap px-1">
+                    {selectedDate.toLocaleDateString('en-US', {
+                      month: 'short',
+                      day: 'numeric',
+                      year: 'numeric',
+                    })}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const d = new Date(selectedDate);
+                      d.setDate(d.getDate() - 1);
+                      setSelectedDate(d);
+                    }}
+                    className="p-0.5 rounded hover:bg-slate-800 text-slate-300 cursor-pointer"
+                    title="Previous Day"
+                  >
+                    <ChevronLeft className="w-3.5 h-3.5" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedDate(new Date())}
+                    className="p-0.5 rounded hover:bg-slate-800 text-slate-300 cursor-pointer"
+                    title="Jump to Today"
+                  >
+                    <ChevronRight className="w-3.5 h-3.5" />
+                  </button>
+                </div>
+              )}
+
+              {/* Global Utility Buttons */}
+              <div className="flex items-center gap-1.5">
+                {pwaInstallPrompt && (
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      await pwaInstallPrompt.prompt();
+                      setPwaInstallPrompt(null);
+                    }}
+                    className="hidden sm:flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl bg-emerald-600/90 hover:bg-emerald-500 text-white text-xs font-semibold cursor-pointer"
+                  >
+                    <span>📲 Install</span>
+                  </button>
+                )}
+
+                <button
+                  type="button"
+                  onClick={() => setCommandPaletteOpen(true)}
+                  className="px-2.5 py-1.5 rounded-xl bg-slate-950/85 hover:bg-slate-900 border border-slate-800/90 text-slate-300 hover:text-white cursor-pointer flex items-center gap-1.5 text-xs"
+                  title="Search & Command Palette (Ctrl+K)"
+                >
+                  <Search className="w-3.5 h-3.5 text-indigo-400" />
+                  <span className="hidden lg:inline text-[11px] text-slate-400">
+                    Search
+                  </span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setJournalDateStr(selectedDateStr);
+                    setJournalModalOpen(true);
+                  }}
+                  className="p-2 rounded-xl bg-slate-950/85 hover:bg-slate-900 border border-slate-800/90 text-slate-300 hover:text-white cursor-pointer"
+                  title="Daily Reflection Journal"
+                >
+                  <span className="text-xs">📓</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setNotificationCenterOpen(true)}
+                  className="relative p-2 rounded-xl bg-slate-950/85 hover:bg-slate-900 border border-slate-800/90 text-slate-300 hover:text-white cursor-pointer"
+                  title="Notifications"
+                >
+                  <Bell className="w-4 h-4" />
+                  {unreadNotificationCount > 0 && (
+                    <span className="absolute -top-1 -right-1 min-w-[16px] h-4 px-1 rounded-full bg-rose-500 text-white text-[10px] font-bold flex items-center justify-center">
+                      {unreadNotificationCount}
+                    </span>
+                  )}
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (appState.security.passwordHash) {
+                      handleUpdateSecurity({ isLocked: true });
+                    } else {
+                      setSecurityModalOpen(true);
+                    }
+                  }}
+                  className="p-2 rounded-xl bg-slate-950/85 hover:bg-slate-900 border border-slate-800/90 text-slate-300 hover:text-amber-300 cursor-pointer"
+                  title={
+                    appState.security.passwordHash
+                      ? 'Lock Workspace (Shortcut: L)'
+                      : 'Configure Password Lock (Shortcut: L)'
+                  }
+                >
+                  <Lock className="w-4 h-4" />
+                </button>
+              </div>
+            </div>
+          </header>
+
+          {/* MOBILE SCROLLABLE SECTION PILL BAR (Quick 1-Tap Access to All 11 Separate Sections) */}
+          <div className="md:hidden flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+            {navItems.map((item) => {
+              const Icon = item.icon;
+              const active = activeTab === item.id;
+              return (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => handleSelectTab(item.id)}
+                  className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-medium whitespace-nowrap shrink-0 border transition-all cursor-pointer ${
+                    active
+                      ? 'text-white border-transparent shadow'
+                      : 'bg-slate-900/90 border-slate-800 text-slate-300'
+                  }`}
+                  style={
+                    active
+                      ? { backgroundColor: appState.style.accentColor }
+                      : undefined
+                  }
+                >
+                  <Icon className="w-3.5 h-3.5" />
+                  <span>{item.label}</span>
+                </button>
+              );
+            })}
+          </div>
+
+          {/* MAIN DEDICATED SECTION CONTENT */}
+          <main className="flex-1 min-w-0 space-y-5">
             {/* Optional Search Bar */}
             {showSearchBar && (
               <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700">
@@ -2765,9 +2805,287 @@ export function App() {
               </div>
             )}
 
-            {/* VIEW ROUTING BY ACTIVE TAB */}
+            {/* 1. DASHBOARD SECTION (Strictly Dashboard Only — No Attached Calendar, Music Player, or Customize Space) */}
             {activeTab === 'dashboard' && (
-              <>
+              <div className="space-y-5">
+                {!appState.environment.minimalMode ? (
+                  <div className="relative rounded-2xl overflow-hidden border border-slate-800/90 shadow-2xl">
+                    <PixelEnvironmentCanvas
+                      environment={appState.environment}
+                      styleSettings={appState.style}
+                      isFocusTimerRunning={isTimerRunning}
+                      roomLayout={appState.roomLayout}
+                      unlockedObjectIds={unlockedObjectIds}
+                      lowPowerBackgroundMode={
+                        appState.profile.lowPowerBackgroundMode !== false
+                      }
+                      hotspotContext={{
+                        dailyProgressPercent: stats.dailyProgressPercent,
+                        completedToday: stats.completedToday,
+                        totalHabits: stats.totalHabits,
+                        currentStreak: stats.overallCurrentStreak,
+                        timerFormatted: timerFormattedStr,
+                        isMusicPlaying: appState.audio.isPlaying,
+                        currentTrackTitle:
+                          currentTrackObj?.title || 'Velvet Rain Lo-Fi',
+                        activeGoalsCount: computedGoals.filter(
+                          (g) => !g.archived
+                        ).length,
+                        worldStageName: worldStage.name,
+                        onNavigateTab: (tab) => setActiveTab(tab),
+                        onToggleFocusTimer: handleStartPauseTimer,
+                        onToggleMusicPlay: () =>
+                          handleUpdateAudio({
+                            isPlaying: !appState.audio.isPlaying,
+                          }),
+                        onOpenJournal: () => {
+                          setJournalDateStr(selectedDateStr);
+                          setJournalModalOpen(true);
+                        },
+                        onCycleTimeOfDay: () => {
+                          const order: (
+                            | 'morning'
+                            | 'afternoon'
+                            | 'evening'
+                            | 'night'
+                          )[] = ['morning', 'afternoon', 'evening', 'night'];
+                          const cur =
+                            appState.environment.timeOfDay === 'auto'
+                              ? 'night'
+                              : appState.environment.timeOfDay;
+                          const next =
+                            order[(order.indexOf(cur) + 1) % order.length];
+                          soundEngine.playHabitCheck(true);
+                          handleUpdateEnvironment({ timeOfDay: next });
+                        },
+                        onCycleScenePortal: () => {
+                          const idx = PIXEL_SCENES.findIndex(
+                            (s) => s.id === appState.environment.sceneId
+                          );
+                          const next =
+                            PIXEL_SCENES[(idx + 1) % PIXEL_SCENES.length];
+                          soundEngine.playHabitCheck(true);
+                          handleUpdateEnvironment({
+                            sceneId: next.id,
+                            weather: next.defaultWeather,
+                          });
+                        },
+                        onScrollToSection: (sectionId) => {
+                          const el = document.getElementById(sectionId);
+                          if (el) {
+                            el.scrollIntoView({
+                              behavior: 'smooth',
+                              block: 'start',
+                            });
+                          }
+                        },
+                      }}
+                      className="w-full h-[260px] sm:h-[320px]"
+                    />
+
+                    {/* Clean Top-Right Scene & Ambient Controls inside Canvas */}
+                    <div className="absolute top-3.5 right-3.5 z-10 flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const idx = PIXEL_SCENES.findIndex(
+                            (s) => s.id === appState.environment.sceneId
+                          );
+                          const next =
+                            PIXEL_SCENES[(idx + 1) % PIXEL_SCENES.length];
+                          handleUpdateEnvironment({
+                            sceneId: next.id,
+                            weather: next.defaultWeather,
+                          });
+                        }}
+                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/80 hover:bg-slate-900 border border-slate-800/90 backdrop-blur-md text-xs text-white transition-colors cursor-pointer"
+                        title="Switch Pixel Scene"
+                      >
+                        <span>{currentScene.name}</span>
+                        <Shuffle className="w-3 h-3 text-slate-400" />
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setAmbientModeOpen(true)}
+                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600/85 hover:bg-indigo-500 border border-indigo-400/50 backdrop-blur-md text-xs font-medium text-white transition-colors cursor-pointer shadow"
+                        title="Enter Full-Screen Ambient Mode (Shortcut: F)"
+                      >
+                        <Maximize2 className="w-3.5 h-3.5" />
+                        <span className="hidden sm:inline">Ambient Mode</span>
+                      </button>
+                    </div>
+
+                    {/* Bottom-Left Greeting Overlay inside Pixel Room */}
+                    <div className="absolute left-5 bottom-5 z-10 pointer-events-none max-w-lg">
+                      <div className="text-sm sm:text-base text-slate-200 font-medium drop-shadow">
+                        {appState.profile.userName
+                          ? greetingText
+                          : greetingText.replace(',', '')}
+                      </div>
+                      <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-2 mt-0.5 drop-shadow-md">
+                        <span>{appState.profile.userName || 'Sanctuary'}</span>
+                        <span className="text-xl">🌙</span>
+                      </h2>
+                      <p className="text-xs sm:text-sm text-slate-200/90 mt-1 drop-shadow">
+                        “{appState.profile.quote}”
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div
+                    className="rounded-2xl border border-slate-800/90 p-4 flex flex-wrap items-center justify-between gap-3"
+                    style={panelBgStyle}
+                  >
+                    <div>
+                      <h2 className="text-lg font-bold text-white">
+                        {appState.profile.userName &&
+                        appState.profile.userName.trim()
+                          ? `${greetingText} ${appState.profile.userName.trim()}`
+                          : greetingText.replace(',', '')}
+                      </h2>
+                      <p className="text-xs text-slate-400">
+                        Minimal Mode · {stats.completedToday}/{stats.totalHabits}{' '}
+                        completed today ({stats.dailyProgressPercent}%)
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleUpdateEnvironment({ minimalMode: false })
+                      }
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs text-white flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Eye className="w-3.5 h-3.5" />
+                      <span>Show Pixel Scene</span>
+                    </button>
+                  </div>
+                )}
+
+                {/* CLEAN 7-CARD KPI SUMMARY ROW (Below Canvas — Never Overlapping) */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2.5">
+                  <div
+                    className="px-3 py-2.5 rounded-xl border border-slate-800/90 flex items-center gap-2.5"
+                    style={panelBgStyle}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-sky-500/20 border border-sky-400/30 flex items-center justify-center text-sky-400 shrink-0 text-sm">
+                      ☑️
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[10px] text-slate-400 truncate">
+                        Total Habits
+                      </div>
+                      <div className="text-base font-bold text-white font-mono-tabular">
+                        {stats.totalHabits}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    className="px-3 py-2.5 rounded-xl border border-slate-800/90 flex items-center gap-2.5"
+                    style={panelBgStyle}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-emerald-500/20 border border-emerald-400/30 flex items-center justify-center text-emerald-400 shrink-0 text-sm">
+                      ✅
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[10px] text-slate-400 truncate">
+                        Completed Today
+                      </div>
+                      <div className="text-base font-bold text-white font-mono-tabular">
+                        {stats.completedToday}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    className="px-3 py-2.5 rounded-xl border border-slate-800/90 flex items-center gap-2.5"
+                    style={panelBgStyle}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-rose-500/20 border border-rose-400/30 flex items-center justify-center text-rose-400 shrink-0 text-sm">
+                      📋
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[10px] text-slate-400 truncate">
+                        Remaining Today
+                      </div>
+                      <div className="text-base font-bold text-white font-mono-tabular">
+                        {stats.remainingToday}
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    className="px-3 py-2.5 rounded-xl border border-slate-800/90 flex items-center gap-2.5"
+                    style={panelBgStyle}
+                  >
+                    <MiniRingProgress
+                      percent={stats.dailyProgressPercent}
+                      color="#10b981"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-[10px] text-slate-400 truncate">
+                        Daily Progress
+                      </div>
+                      <div className="text-base font-bold text-white font-mono-tabular">
+                        {stats.dailyProgressPercent}%
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    className="px-3 py-2.5 rounded-xl border border-slate-800/90 flex items-center gap-2.5"
+                    style={panelBgStyle}
+                  >
+                    <MiniRingProgress
+                      percent={stats.weeklyProgressPercent}
+                      color="#22c55e"
+                    />
+                    <div className="min-w-0">
+                      <div className="text-[10px] text-slate-400 truncate">
+                        Weekly Progress
+                      </div>
+                      <div className="text-base font-bold text-white font-mono-tabular">
+                        {stats.weeklyProgressPercent}%
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    className="px-3 py-2.5 rounded-xl border border-slate-800/90 flex items-center gap-2.5"
+                    style={panelBgStyle}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-amber-500/20 border border-amber-400/30 flex items-center justify-center text-amber-400 shrink-0">
+                      <Flame className="w-4 h-4 fill-current" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[10px] text-slate-400 truncate">
+                        Current Streak
+                      </div>
+                      <div className="text-sm font-bold text-white font-mono-tabular whitespace-nowrap">
+                        {stats.overallCurrentStreak} days
+                      </div>
+                    </div>
+                  </div>
+
+                  <div
+                    className="px-3 py-2.5 rounded-xl border border-slate-800/90 flex items-center gap-2.5"
+                    style={panelBgStyle}
+                  >
+                    <div className="w-8 h-8 rounded-lg bg-yellow-500/20 border border-yellow-400/30 flex items-center justify-center text-yellow-400 shrink-0">
+                      <Trophy className="w-4 h-4" />
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[10px] text-slate-400 truncate">
+                        Best Streak
+                      </div>
+                      <div className="text-sm font-bold text-white font-mono-tabular whitespace-nowrap">
+                        {stats.overallBestStreak} days
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
                 {isLivingWorldMode ? (
                   <LivingWorldSanctuary
                     habits={filteredActiveHabits}
@@ -2820,6 +3138,7 @@ export function App() {
                       });
                     }}
                     onNavigateTab={(tab) => setActiveTab(tab)}
+                    onOpenCameraForHabit={handleOpenCameraForHabit}
                   />
                 ) : (
                   /* 3-COLUMN CLASSIC STUDIO GRID: Today's Habits | Monthly Progress | Top Goals */
@@ -3031,7 +3350,7 @@ export function App() {
 
                       {/* Pixel-Art Aesthetic Bar + Trend Line Chart */}
                       <div className="flex-1 flex flex-col justify-center my-2">
-                        <div className="relative h-40 flex items-end gap-1 pt-4 pb-5 px-2 border-b border-l border-slate-800/90">
+                        <div className="relative h-40 flex items-end gap-1 pt-4 pb-6 px-2 border-b border-l border-slate-800/90 mb-2">
                           {/* Y-axis labels */}
                           <div className="absolute -left-1 top-1 text-[10px] font-mono-tabular text-slate-500">
                             100%
@@ -3248,52 +3567,10 @@ export function App() {
                   )}
                 </div>
                 )}
-
-                {/* HABIT CALENDAR SECTION */}
-                <HabitCalendarSection
-                  habits={filteredActiveHabits}
-                  completions={appState.completions}
-                  monthViewDate={monthViewDate}
-                  onChangeMonth={(delta) => {
-                    const next = new Date(
-                      monthViewDate.getFullYear(),
-                      monthViewDate.getMonth() + delta,
-                      1
-                    );
-                    setMonthViewDate(next);
-                  }}
-                  onResetToToday={() => setMonthViewDate(new Date())}
-                  onToggleCompletion={handleToggleHabitCompletion}
-                  onInspectHabit={(habit) => setInspectingHabitId(habit.id)}
-                  styleSettings={appState.style}
-                  panelBgStyle={panelBgStyle}
-                />
-
-                {/* BOTTOM SHOWCASE & QUICK CUSTOMIZATION STRIP */}
-                {!appState.environment.minimalMode && (
-                  <CustomizeSpaceView
-                    environment={appState.environment}
-                    styleSettings={appState.style}
-                    audio={appState.audio}
-                    timer={appState.timer}
-                    presets={appState.presets}
-                    roomLayout={appState.roomLayout}
-                    unlockedObjectIds={unlockedObjectIds}
-                    onUpdateEnvironment={handleUpdateEnvironment}
-                    onUpdateStyle={handleUpdateStyle}
-                    onUpdateAudio={handleUpdateAudio}
-                    onUpdateTimer={handleUpdateTimer}
-                    onApplyPreset={handleApplyPreset}
-                    onSaveCustomPreset={handleSaveCustomPreset}
-                    onDeleteCustomPreset={handleDeleteCustomPreset}
-                    onUpdateRoomObject={handleUpdateRoomObject}
-                    onResetRoomLayout={handleResetRoomLayout}
-                    panelBgStyle={panelBgStyle}
-                  />
-                )}
-              </>
+              </div>
             )}
 
+            {/* 2. HABITS SECTION */}
             {activeTab === 'habits' && (
               <HabitsManagementView
                 habits={filteredAllHabits}
@@ -3316,6 +3593,22 @@ export function App() {
               />
             )}
 
+            {/* 3. DAILY CAMERA UPDATES SECTION */}
+            {activeTab === 'dailylog' && (
+              <DailyCameraUpdateView
+                habits={appState.habits}
+                completions={appState.completions}
+                dailyUpdates={appState.dailyUpdates || []}
+                selectedDate={selectedDate}
+                initialHabitId={cameraPreselectedHabitId}
+                styleSettings={appState.style}
+                panelBgStyle={panelBgStyle}
+                onAddDailyUpdate={handleAddDailyUpdate}
+                onDeleteDailyUpdate={handleDeleteDailyUpdate}
+              />
+            )}
+
+            {/* 4. CALENDAR SECTION */}
             {activeTab === 'calendar' && (
               <HabitCalendarSection
                 habits={filteredActiveHabits}
@@ -3338,6 +3631,7 @@ export function App() {
               />
             )}
 
+            {/* 5. GOALS SECTION */}
             {activeTab === 'goals' && (
               <GoalsManagementView
                 goals={computedGoals}
@@ -3359,60 +3653,295 @@ export function App() {
               />
             )}
 
+            {/* 6. FOCUS TIMER STUDIO SECTION (Complete Standalone View) */}
             {activeTab === 'timer' && (
-              <div
-                className="rounded-2xl border border-slate-800/90 p-6 shadow-xl text-center space-y-5"
-                style={panelBgStyle}
-              >
-                <div className="flex items-center justify-between max-w-md mx-auto">
-                  <span className="text-xs font-mono-tabular text-indigo-300 uppercase tracking-wider">
-                    Cycle {appState.timer.currentCycle || 1} /{' '}
-                    {appState.timer.totalCycles || 4}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => setAmbientModeOpen(true)}
-                    className="px-3 py-1.5 rounded-xl bg-indigo-600/30 hover:bg-indigo-600/50 border border-indigo-400/40 text-xs text-indigo-200 flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Maximize2 className="w-3.5 h-3.5" />
-                    <span>Enter Ambient Mode</span>
-                  </button>
-                </div>
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
+                {/* Left 7 Cols: Main Pomodoro & Deep Work Timer Deck */}
+                <section
+                  className="lg:col-span-7 rounded-2xl border border-slate-800/90 p-6 shadow-xl flex flex-col items-center justify-between text-center space-y-5"
+                  style={panelBgStyle}
+                >
+                  <div className="w-full flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-mono-tabular text-indigo-300 font-semibold">
+                      Cycle {appState.timer.currentCycle || 1} of{' '}
+                      {appState.timer.totalCycles || 4}
+                    </span>
 
-                <h2 className="text-lg font-semibold text-white">
-                  Habitra Focus Studio
-                </h2>
-                <p className="text-xs text-slate-400 max-w-md mx-auto font-mono-tabular">
-                  Completed today: {appState.timer.sessionsCompletedToday}{' '}
-                  sessions ({appState.timer.totalFocusMinutesToday} mins total
-                  deep work)
-                </p>
+                    <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-950/85 border border-slate-800">
+                      {(
+                        [
+                          { id: 'focus', label: 'Focus' },
+                          { id: 'short_break', label: 'Short Break' },
+                          { id: 'long_break', label: 'Long Break' },
+                          { id: 'custom', label: 'Custom' },
+                        ] as { id: TimerMode; label: string }[]
+                      ).map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => handleChangeTimerMode(m.id)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-colors cursor-pointer ${
+                            appState.timer.mode === m.id
+                              ? 'bg-indigo-600 text-white shadow'
+                              : 'text-slate-400 hover:text-white'
+                          }`}
+                        >
+                          {m.label}
+                        </button>
+                      ))}
+                    </div>
 
-                <div className="text-6xl sm:text-7xl font-bold text-white font-mono-tabular tracking-tight py-4">
-                  {String(Math.floor(secondsRemaining / 60)).padStart(2, '0')}:
-                  {String(secondsRemaining % 60).padStart(2, '0')}
-                </div>
+                    <button
+                      type="button"
+                      onClick={() => setAmbientModeOpen(true)}
+                      className="px-3 py-1.5 rounded-xl bg-indigo-600/25 hover:bg-indigo-600/40 border border-indigo-400/40 text-xs text-indigo-200 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                      <span>Ambient Mode</span>
+                    </button>
+                  </div>
 
-                <div className="flex justify-center gap-3">
-                  <button
-                    type="button"
-                    onClick={handleStartPauseTimer}
-                    className="px-6 py-3 rounded-xl font-semibold text-sm text-white shadow-lg cursor-pointer"
-                    style={{ backgroundColor: appState.style.accentColor }}
-                  >
-                    {isTimerRunning ? 'Pause Session' : 'Start Focus Session'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleResetTimer}
-                    className="px-5 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-sm text-slate-200 cursor-pointer"
-                  >
-                    Reset
-                  </button>
-                </div>
+                  {timerBannerMessage && (
+                    <div className="w-full p-3 rounded-xl bg-emerald-500/15 border border-emerald-500/40 text-xs text-emerald-300 font-medium">
+                      {timerBannerMessage}
+                    </div>
+                  )}
+
+                  <div className="py-6 space-y-2">
+                    <div className="text-6xl sm:text-7xl font-bold text-white font-mono-tabular tracking-tight">
+                      {timerFormattedStr}
+                    </div>
+                    <p className="text-xs text-slate-400 font-mono-tabular">
+                      Completed today: {appState.timer.sessionsCompletedToday}{' '}
+                      sessions ({appState.timer.totalFocusMinutesToday} mins
+                      deep work)
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center justify-center gap-3 w-full">
+                    <button
+                      type="button"
+                      onClick={handleStartPauseTimer}
+                      className="px-7 py-3 rounded-xl font-semibold text-sm text-white shadow-lg flex items-center gap-2 cursor-pointer transition-opacity hover:opacity-95"
+                      style={{ backgroundColor: appState.style.accentColor }}
+                    >
+                      {isTimerRunning ? (
+                        <>
+                          <Pause className="w-4 h-4 fill-current" />
+                          <span>Pause Session</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-4 h-4 fill-current" />
+                          <span>Start Focus Session</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleResetTimer}
+                      className="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <RotateCcw className="w-4 h-4" />
+                      <span>Reset</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleSkipTimer}
+                      className="px-4 py-3 rounded-xl bg-slate-800 hover:bg-slate-700 text-xs font-medium text-slate-200 flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <SkipForward className="w-4 h-4" />
+                      <span>Skip Phase</span>
+                    </button>
+                  </div>
+                </section>
+
+                {/* Right 5 Cols: Timer Durations, Preferences & Today's Session Log */}
+                <section
+                  className="lg:col-span-5 rounded-2xl border border-slate-800/90 p-5 shadow-xl space-y-5 flex flex-col justify-between"
+                  style={panelBgStyle}
+                >
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-sm font-bold text-white">
+                        Timer Durations & Cycle Settings
+                      </h3>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Customize your Pomodoro intervals and focus immersion preferences.
+                      </p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">
+                          Focus Duration (mins)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={180}
+                          value={appState.timer.focusMinutes}
+                          onChange={(e) => {
+                            const val = Math.max(
+                              1,
+                              Math.min(180, Number(e.target.value) || 25)
+                            );
+                            handleUpdateTimer({ focusMinutes: val });
+                            if (
+                              !isTimerRunning &&
+                              appState.timer.mode === 'focus'
+                            ) {
+                              setSecondsRemaining(val * 60);
+                            }
+                          }}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono-tabular"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">
+                          Short Break (mins)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={60}
+                          value={appState.timer.shortBreakMinutes}
+                          onChange={(e) => {
+                            const val = Math.max(
+                              1,
+                              Math.min(60, Number(e.target.value) || 5)
+                            );
+                            handleUpdateTimer({ shortBreakMinutes: val });
+                            if (
+                              !isTimerRunning &&
+                              appState.timer.mode === 'short_break'
+                            ) {
+                              setSecondsRemaining(val * 60);
+                            }
+                          }}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono-tabular"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">
+                          Long Break (mins)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={90}
+                          value={appState.timer.longBreakMinutes}
+                          onChange={(e) => {
+                            const val = Math.max(
+                              1,
+                              Math.min(90, Number(e.target.value) || 15)
+                            );
+                            handleUpdateTimer({ longBreakMinutes: val });
+                            if (
+                              !isTimerRunning &&
+                              appState.timer.mode === 'long_break'
+                            ) {
+                              setSecondsRemaining(val * 60);
+                            }
+                          }}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono-tabular"
+                        />
+                      </div>
+
+                      <div>
+                        <label className="block text-[11px] text-slate-400 mb-1">
+                          Custom Timer (mins)
+                        </label>
+                        <input
+                          type="number"
+                          min={1}
+                          max={240}
+                          value={appState.timer.customMinutes}
+                          onChange={(e) => {
+                            const val = Math.max(
+                              1,
+                              Math.min(240, Number(e.target.value) || 30)
+                            );
+                            handleUpdateTimer({ customMinutes: val });
+                            if (
+                              !isTimerRunning &&
+                              appState.timer.mode === 'custom'
+                            ) {
+                              setSecondsRemaining(val * 60);
+                            }
+                          }}
+                          className="w-full px-3 py-2 rounded-xl bg-slate-950 border border-slate-800 text-xs text-white font-mono-tabular"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="space-y-2 pt-2 border-t border-slate-800/80">
+                      <label className="flex items-center justify-between text-xs text-slate-300 cursor-pointer">
+                        <span>Auto-repeat Pomodoro cycles</span>
+                        <input
+                          type="checkbox"
+                          checked={appState.timer.pomodoroAutoRepeat}
+                          onChange={(e) =>
+                            handleUpdateTimer({
+                              pomodoroAutoRepeat: e.target.checked,
+                            })
+                          }
+                          className="rounded border-slate-700 accent-indigo-500"
+                        />
+                      </label>
+                      <label className="flex items-center justify-between text-xs text-slate-300 cursor-pointer">
+                        <span>Boost ambient sound during Focus</span>
+                        <input
+                          type="checkbox"
+                          checked={appState.timer.immerseOnFocus}
+                          onChange={(e) =>
+                            handleUpdateTimer({
+                              immerseOnFocus: e.target.checked,
+                            })
+                          }
+                          className="rounded border-slate-700 accent-indigo-500"
+                        />
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Recent Focus Sessions */}
+                  <div className="pt-3 border-t border-slate-800/80">
+                    <div className="text-xs font-semibold text-slate-300 mb-2">
+                      Recent Focus Sessions (
+                      {(appState.timer.history || []).length})
+                    </div>
+                    {(appState.timer.history || []).length === 0 ? (
+                      <p className="text-xs text-slate-500">
+                        No completed focus sessions yet today. Start the timer to log your first deep work block!
+                      </p>
+                    ) : (
+                      <div className="space-y-1.5 max-h-36 overflow-y-auto">
+                        {(appState.timer.history || [])
+                          .slice(0, 5)
+                          .map((item) => (
+                            <div
+                              key={item.id}
+                              className="flex items-center justify-between px-3 py-1.5 rounded-lg bg-slate-950/70 border border-slate-800/80 text-xs font-mono-tabular"
+                            >
+                              <span className="text-slate-300 capitalize">
+                                {item.mode.replace('_', ' ')} ({item.minutes}m)
+                              </span>
+                              <span className="text-slate-400">
+                                {item.date} · {item.completedAt}
+                              </span>
+                            </div>
+                          ))}
+                      </div>
+                    )}
+                  </div>
+                </section>
               </div>
             )}
 
+            {/* 7. MUSIC PLAYER STUDIO SECTION (Strictly Standalone) */}
             {activeTab === 'music' && (
               <MusicPlayerView
                 audio={appState.audio}
@@ -3426,6 +3955,7 @@ export function App() {
               />
             )}
 
+            {/* 8. REMINDERS & HYDRATION SECTION */}
             {activeTab === 'reminders' && (
               <RemindersAndHydrationView
                 reminders={appState.reminders}
@@ -3456,6 +3986,7 @@ export function App() {
               />
             )}
 
+            {/* 9. STATISTICS & ANALYTICS SECTION */}
             {activeTab === 'statistics' && (
               <StatisticsSection
                 stats={stats}
@@ -3473,28 +4004,49 @@ export function App() {
               />
             )}
 
+            {/* 10. MY SPACE CUSTOMIZATION SECTION (With Live Environment Preview) */}
             {activeTab === 'myspace' && (
-              <CustomizeSpaceView
-                environment={appState.environment}
-                styleSettings={appState.style}
-                audio={appState.audio}
-                timer={appState.timer}
-                presets={appState.presets}
-                roomLayout={appState.roomLayout}
-                unlockedObjectIds={unlockedObjectIds}
-                onUpdateEnvironment={handleUpdateEnvironment}
-                onUpdateStyle={handleUpdateStyle}
-                onUpdateAudio={handleUpdateAudio}
-                onUpdateTimer={handleUpdateTimer}
-                onApplyPreset={handleApplyPreset}
-                onSaveCustomPreset={handleSaveCustomPreset}
-                onDeleteCustomPreset={handleDeleteCustomPreset}
-                onUpdateRoomObject={handleUpdateRoomObject}
-                onResetRoomLayout={handleResetRoomLayout}
-                panelBgStyle={panelBgStyle}
-              />
+              <div className="space-y-5">
+                <div className="relative rounded-2xl overflow-hidden border border-slate-800/90 shadow-xl">
+                  <PixelEnvironmentCanvas
+                    environment={appState.environment}
+                    styleSettings={appState.style}
+                    isFocusTimerRunning={isTimerRunning}
+                    roomLayout={appState.roomLayout}
+                    unlockedObjectIds={unlockedObjectIds}
+                    lowPowerBackgroundMode={
+                      appState.profile.lowPowerBackgroundMode !== false
+                    }
+                    className="w-full h-[220px] sm:h-[260px]"
+                  />
+                  <div className="absolute bottom-3 left-4 px-3 py-1 rounded-lg bg-slate-950/80 border border-slate-800 text-xs text-slate-200 backdrop-blur-md">
+                    Live Room Preview · {currentScene.name}
+                  </div>
+                </div>
+
+                <CustomizeSpaceView
+                  environment={appState.environment}
+                  styleSettings={appState.style}
+                  audio={appState.audio}
+                  timer={appState.timer}
+                  presets={appState.presets}
+                  roomLayout={appState.roomLayout}
+                  unlockedObjectIds={unlockedObjectIds}
+                  onUpdateEnvironment={handleUpdateEnvironment}
+                  onUpdateStyle={handleUpdateStyle}
+                  onUpdateAudio={handleUpdateAudio}
+                  onUpdateTimer={handleUpdateTimer}
+                  onApplyPreset={handleApplyPreset}
+                  onSaveCustomPreset={handleSaveCustomPreset}
+                  onDeleteCustomPreset={handleDeleteCustomPreset}
+                  onUpdateRoomObject={handleUpdateRoomObject}
+                  onResetRoomLayout={handleResetRoomLayout}
+                  panelBgStyle={panelBgStyle}
+                />
+              </div>
             )}
 
+            {/* 11. SETTINGS & BACKUP SECTION */}
             {activeTab === 'settings' && (
               <SettingsAndBackupView
                 profile={appState.profile}
@@ -3546,63 +4098,18 @@ export function App() {
               />
             )}
           </main>
-
-          {/* RIGHT WORKSPACE COLUMN: Focus Timer, Ambient Music, Quick Reminders */}
-          <RightWorkspaceColumn
-            timer={appState.timer}
-            secondsRemaining={secondsRemaining}
-            isTimerRunning={isTimerRunning}
-            timerBannerMessage={timerBannerMessage}
-            onStartPauseTimer={handleStartPauseTimer}
-            onResetTimer={handleResetTimer}
-            onSkipTimer={handleSkipTimer}
-            onChangeTimerMode={handleChangeTimerMode}
-            onUpdateTimerSettings={handleUpdateTimer}
-            audio={appState.audio}
-            onUpdateAudio={handleUpdateAudio}
-            onSelectTrack={handleSelectTrack}
-            onOpenMusicPage={() => setActiveTab('music')}
-            onNextTrack={() => handleNextTrack(true)}
-            onPrevTrack={handlePrevTrack}
-            onUploadLocalTracks={handleUploadLocalTracks}
-            reminders={appState.reminders}
-            onToggleReminder={handleToggleReminder}
-            onOpenAddReminder={() => {
-              setEditingReminder(null);
-              setReminderModalOpen(true);
-            }}
-            onOpenEditReminder={(rem) => {
-              setEditingReminder(rem);
-              setReminderModalOpen(true);
-            }}
-            waterCompleted={appState.profile.waterCompletedToday}
-            waterGoal={appState.profile.waterDailyGoal}
-            onLogWaterCup={() => {
-              soundEngine.playHabitCheck(true);
-              handleUpdateProfile({
-                waterCompletedToday: Math.min(
-                  appState.profile.waterDailyGoal + 4,
-                  appState.profile.waterCompletedToday + 1
-                ),
-              });
-            }}
-            styleSettings={appState.style}
-            panelBgStyle={panelBgStyle}
-          />
         </div>
       </div>
 
       {/* MOBILE BOTTOM NAVIGATION BAR (<= 768px) */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-14 bg-[#0d1322]/95 border-t border-slate-800 backdrop-blur-xl z-40 flex items-center justify-around px-2">
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 h-15 bg-[#0d1322]/95 border-t border-slate-800 backdrop-blur-xl z-40 flex items-center justify-around px-1">
         {(
           [
             { id: 'dashboard', label: 'Home', icon: Home },
             { id: 'habits', label: 'Habits', icon: CheckSquare },
+            { id: 'dailylog', label: 'Camera', icon: Camera },
             { id: 'timer', label: 'Timer', icon: TimerIcon },
             { id: 'music', label: 'Music', icon: Music },
-            { id: 'goals', label: 'Goals', icon: Target },
-            { id: 'myspace', label: 'Space', icon: Sparkles },
-            { id: 'settings', label: 'Settings', icon: Settings },
           ] as { id: NavigationTab; label: string; icon: React.ElementType }[]
         ).map((m) => {
           const Icon = m.icon;
@@ -3611,8 +4118,8 @@ export function App() {
             <button
               key={m.id}
               type="button"
-              onClick={() => setActiveTab(m.id)}
-              className={`flex flex-col items-center justify-center py-1 px-2 rounded-lg text-[10px] font-medium transition-colors cursor-pointer ${
+              onClick={() => handleSelectTab(m.id)}
+              className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-lg text-[10px] font-medium transition-colors cursor-pointer ${
                 active ? 'text-indigo-400' : 'text-slate-400'
               }`}
             >
@@ -3621,6 +4128,16 @@ export function App() {
             </button>
           );
         })}
+        <button
+          type="button"
+          onClick={() => setMobileMenuOpen(true)}
+          className={`flex flex-col items-center justify-center py-1 px-2.5 rounded-lg text-[10px] font-medium transition-colors cursor-pointer ${
+            mobileMenuOpen ? 'text-indigo-400' : 'text-slate-400'
+          }`}
+        >
+          <Menu className="w-4 h-4 mb-0.5" />
+          <span>All Sections</span>
+        </button>
       </nav>
 
       {/* FULL-SCREEN AMBIENT MODE OVERLAY */}

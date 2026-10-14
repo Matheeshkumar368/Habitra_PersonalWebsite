@@ -1204,8 +1204,8 @@ export const ReminderFormModal: React.FC<ReminderFormModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4">
-      <div className="w-full max-w-md rounded-2xl bg-[#111827] border border-slate-700/80 p-6 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-4 overflow-y-auto">
+      <div className="w-full max-w-md rounded-2xl bg-[#111827] border border-slate-700/80 p-6 shadow-2xl my-auto">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-base font-semibold text-white">
             {editingReminder ? 'Edit Reminder' : 'Create Reminder'}
@@ -2149,6 +2149,9 @@ export const WelcomeWizardModal: React.FC<WelcomeWizardModalProps> = ({
                           src={sc.imageUrl}
                           alt={sc.name}
                           referrerPolicy="no-referrer"
+                          onError={(e) => {
+                            (e.currentTarget as HTMLElement).style.display = 'none';
+                          }}
                           className="absolute inset-0 w-full h-full object-cover"
                         />
                       ) : (

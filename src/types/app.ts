@@ -3,6 +3,7 @@ export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 export type NavigationTab =
   | 'dashboard'
   | 'habits'
+  | 'dailylog'
   | 'calendar'
   | 'goals'
   | 'timer'
@@ -144,6 +145,21 @@ export interface JournalEntry {
   updatedAt: string;
 }
 
+export interface DailyPhotoUpdate {
+  id: string;
+  dateStr: string; // YYYY-MM-DD
+  timestamp: number;
+  timeFormatted: string;
+  imageDataUrl: string;
+  mediaType?: 'image' | 'video';
+  videoDataUrl?: string;
+  caption: string;
+  mood: string;
+  habitId?: string;
+  habitName?: string;
+  habitIcon?: string;
+}
+
 export interface AudioPreset {
   id: string;
   name: string;
@@ -198,6 +214,8 @@ export interface EnvironmentSettings {
   showProgressGardenObjects?: boolean;
   showWorldHotspots?: boolean;
   worldViewMode?: 'living_world' | 'classic_studio';
+  customBackgroundUrl?: string;
+  customBackgroundType?: 'image' | 'video';
 }
 
 export type PixelStyleId =
@@ -412,6 +430,22 @@ export interface UserProfile {
   lastBackupAt?: string | null;
 }
 
+export interface QuickNoteItem {
+  id: string;
+  text: string;
+  done: boolean;
+}
+
+export interface QuickNoteData {
+  text: string;
+  checklist?: QuickNoteItem[];
+  mode?: 'text' | 'checklist';
+  color?: string;
+  isPinned?: boolean;
+  isMinimized?: boolean;
+  updatedAt: number;
+}
+
 export interface AppDataState {
   habits: Habit[];
   completions: HabitCompletionMap;
@@ -427,5 +461,7 @@ export interface AppDataState {
   notificationHistory?: NotificationLogItem[];
   roomLayout?: Record<RoomObjectId, RoomObjectPlacement>;
   journalEntries?: Record<string, JournalEntry>;
+  dailyUpdates?: DailyPhotoUpdate[];
   versionedBackups?: VersionedBackupEntry[];
+  quickNote?: QuickNoteData;
 }

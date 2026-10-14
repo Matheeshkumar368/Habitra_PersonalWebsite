@@ -1,24 +1,18 @@
 import React, { useState } from 'react';
 import {
+  Camera,
   Check,
   Compass,
   Droplets,
   Edit3,
-  Flame,
   Music,
   Plus,
   Sparkles,
-  Star,
-  Target,
   Timer,
   BarChart2,
-  Eye,
-  Sun,
-  CloudRain,
 } from 'lucide-react';
-import { PIXEL_SCENES, ROOM_OBJECT_CATALOG } from '../constants/scenesAndPresets';
+import { ROOM_OBJECT_CATALOG } from '../constants/scenesAndPresets';
 import {
-  AmbientSoundId,
   AudioSettings,
   EnvironmentSettings,
   Goal,
@@ -26,7 +20,6 @@ import {
   HabitCompletionMap,
   NavigationTab,
   RoomObjectId,
-  SceneId,
   StyleSettings,
   TimeOfDay,
   WeatherType,
@@ -68,6 +61,8 @@ interface LivingWorldSanctuaryProps {
   onUpdateAudio: (patch: Partial<AudioSettings>) => void;
   onLogWaterCup: () => void;
   onNavigateTab: (tab: NavigationTab) => void;
+  onOpenCameraForHabit?: (habitId?: string) => void;
+  onLoadStarterPack?: () => void;
 }
 
 export interface WorldStageInfo {
@@ -220,11 +215,9 @@ export const LivingWorldSanctuary: React.FC<LivingWorldSanctuaryProps> = ({
   selectedDateStr,
   environment,
   styleSettings,
-  audio,
   unlockedObjectIds,
   waterCompleted,
   waterGoal,
-  focusSessionsToday,
   focusMinutesToday,
   xpLevel,
   xpTitle,
@@ -239,12 +232,10 @@ export const LivingWorldSanctuary: React.FC<LivingWorldSanctuaryProps> = ({
   onOpenAddGoal,
   onOpenEditGoal,
   onUpdateEnvironment,
-  onUpdateAudio,
   onLogWaterCup,
   onNavigateTab,
+  onOpenCameraForHabit,
 }) => {
-  const [portalCategory, setPortalCategory] = useState<string>('All');
-  const [syncAudioWithPortal, setSyncAudioWithPortal] = useState<boolean>(true);
   const [recentlyWateredId, setRecentlyWateredId] = useState<string | null>(null);
 
   const worldStage = computeWorldStage(
@@ -256,35 +247,12 @@ export const LivingWorldSanctuary: React.FC<LivingWorldSanctuaryProps> = ({
     xpLevel
   );
 
-  const featuredScenes = PIXEL_SCENES.filter((sc) =>
-    portalCategory === 'All' ? true : sc.category === portalCategory
-  );
-
   const handleWaterHabitPlant = (habitId: string) => {
     setRecentlyWateredId(habitId);
     onToggleHabitCompletion(habitId, selectedDateStr);
     window.setTimeout(() => {
       setRecentlyWateredId((prev) => (prev === habitId ? null : prev));
     }, 900);
-  };
-
-  const handleTravelToRealm = (
-    sceneId: SceneId,
-    defaultWeather: WeatherType,
-    defaultTime: TimeOfDay,
-    defaultAmbient: AmbientSoundId
-  ) => {
-    onUpdateEnvironment({
-      sceneId,
-      weather: defaultWeather,
-      timeOfDay: defaultTime,
-    });
-    if (syncAudioWithPortal && defaultAmbient !== 'silent') {
-      onUpdateAudio({
-        ambientSoundId: defaultAmbient,
-        ambientPlaying: true,
-      });
-    }
   };
 
   return (
@@ -294,22 +262,42 @@ export const LivingWorldSanctuary: React.FC<LivingWorldSanctuaryProps> = ({
         className="rounded-2xl border border-slate-800/90 p-5 shadow-xl"
         style={panelBgStyle}
       >
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 pb-4 border-b border-slate-800/80">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2 text-xs text-teal-300 font-medium">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div className="space-y-1 flex-1 min-w-0">
+            <div className="flex flex-wrap items-center gap-2 text-xs text-teal-300 font-medium">
               <span>{worldStage.badge}</span>
               <span>World Evolution Stage {worldStage.stageNumber} of 5</span>
               <span aria-hidden="true">·</span>
               <span className="font-mono-tabular">
                 Level {xpLevel} {xpTitle} ({totalXP} XP)
               </span>
+              <span aria-hidden="true">·</span>
+              <span className="font-mono-tabular text-slate-300">
+                {worldStage.vitalityPercent}% Vitality
+              </span>
             </div>
-            <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight">
+            <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
               {worldStage.name}
             </h2>
-            <p className="text-xs text-slate-300 max-w-2xl">
-              {worldStage.subtitle}
-            </p>
+            <div className="w-full max-w-xl h-2 rounded-full bg-slate-950 overflow-hidden border border-slate-800/80 mt-2">
+              <div
+                className="h-full rounded-full transition-all duration-500"
+                style={{
+                  width: `${worldStage.vitalityPercent}%`,
+                  background:
+                    'linear-gradient(90deg, #14b8a6 0%, #38bdf8 55%, #f59e0b 100%)',
+                }}
+              />
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 font-mono-tabular pt-1">
+              <span>River: {worldStage.riverStatus}</span>
+              <span aria-hidden="true">·</span>
+              <span>Flora: {worldStage.floraStatus}</span>
+              <span aria-hidden="true">·</span>
+              <span>
+                Next Lv: {currentLevelXP}/{nextLevelXP} XP
+              </span>
+            </div>
           </div>
 
           {/* Interactive Atmosphere & World View Controls */}
@@ -394,91 +382,6 @@ export const LivingWorldSanctuary: React.FC<LivingWorldSanctuaryProps> = ({
             </button>
           </div>
         </div>
-
-        {/* World Vitality Bar & 4 Living Ecosystem Metrics (Unboxed Clean Typography) */}
-        <div className="pt-4 grid grid-cols-1 md:grid-cols-12 gap-4 items-center">
-          <div className="md:col-span-5 space-y-2">
-            <div className="flex items-center justify-between text-xs">
-              <span className="text-slate-300 font-medium">
-                Sanctuary Vitality & Ecosystem Resonance
-              </span>
-              <span className="font-mono-tabular font-bold text-teal-300">
-                {worldStage.vitalityPercent}% Vitality
-              </span>
-            </div>
-            <div className="w-full h-2.5 rounded-full bg-slate-950 overflow-hidden border border-slate-800/80">
-              <div
-                className="h-full rounded-full transition-all duration-500"
-                style={{
-                  width: `${worldStage.vitalityPercent}%`,
-                  background:
-                    'linear-gradient(90deg, #14b8a6 0%, #38bdf8 55%, #f59e0b 100%)',
-                }}
-              />
-            </div>
-            <div className="flex flex-wrap items-center gap-2 text-[11px] text-slate-400 font-mono-tabular">
-              <span>River: {worldStage.riverStatus}</span>
-              <span aria-hidden="true">·</span>
-              <span>Flora: {worldStage.floraStatus}</span>
-              <span aria-hidden="true">·</span>
-              <span>
-                Next Lv: {currentLevelXP}/{nextLevelXP} XP
-              </span>
-            </div>
-          </div>
-
-          <div className="md:col-span-7 grid grid-cols-2 sm:grid-cols-4 gap-3">
-            <div className="p-3 rounded-xl bg-slate-950/65 border border-slate-800/80">
-              <div className="text-[11px] text-slate-400">Daily Rituals</div>
-              <div className="text-base font-bold text-white font-mono-tabular mt-0.5">
-                {stats.completedToday}/{stats.totalHabits}
-              </div>
-              <div className="text-[11px] text-emerald-400 font-mono-tabular mt-0.5">
-                {stats.dailyProgressPercent}% complete
-              </div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-slate-950/65 border border-slate-800/80">
-              <div className="text-[11px] text-slate-400">Active Streak</div>
-              <div className="text-base font-bold text-white font-mono-tabular mt-0.5 flex items-center gap-1">
-                <span>{stats.overallCurrentStreak} days</span>
-              </div>
-              <div className="text-[11px] text-amber-400 font-mono-tabular mt-0.5">
-                Best: {stats.overallBestStreak}d
-              </div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-slate-950/65 border border-slate-800/80">
-              <div className="text-[11px] text-slate-400">Focus Sanctuary</div>
-              <div className="text-base font-bold text-white font-mono-tabular mt-0.5">
-                {focusMinutesToday} mins
-              </div>
-              <div className="text-[11px] text-sky-400 font-mono-tabular mt-0.5">
-                {focusSessionsToday} sessions today
-              </div>
-            </div>
-
-            <div className="p-3 rounded-xl bg-slate-950/65 border border-slate-800/80 flex flex-col justify-between">
-              <div className="flex items-center justify-between">
-                <span className="text-[11px] text-slate-400">Spring Water</span>
-                <button
-                  type="button"
-                  onClick={onLogWaterCup}
-                  className="text-[11px] font-semibold text-sky-300 hover:text-white cursor-pointer"
-                  title="Log +1 cup of water"
-                >
-                  +1 Cup
-                </button>
-              </div>
-              <div className="text-base font-bold text-white font-mono-tabular mt-0.5">
-                {waterCompleted}/{waterGoal} cups
-              </div>
-              <div className="text-[11px] text-teal-400 font-mono-tabular mt-0.5">
-                {unlockedObjectIds.length}/{ROOM_OBJECT_CATALOG.length} relics
-              </div>
-            </div>
-          </div>
-        </div>
       </section>
 
       {/* 2. THE LIVING HABIT GARDEN + ACTIVE QUEST MILESTONES */}
@@ -493,24 +396,36 @@ export const LivingWorldSanctuary: React.FC<LivingWorldSanctuaryProps> = ({
         >
           <div>
             <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
-              <div>
+              <div className="min-w-0">
                 <h2 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
                   <span>🌿</span>
-                  <span>The Living Habit Garden & Daily Rituals</span>
+                  <span>Today&apos;s Habits & Daily Rituals</span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Each habit cultivates a living botanical specimen on your terrace. Completing habits nourishes its growth stage.
+                  Complete your daily habits to nourish your sanctuary garden or snap a daily camera update.
                 </p>
               </div>
 
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onOpenCameraForHabit
+                      ? onOpenCameraForHabit()
+                      : onNavigateTab('dailylog')
+                  }
+                  className="px-3 py-1.5 rounded-xl bg-teal-500/15 hover:bg-teal-500/25 border border-teal-400/35 text-teal-200 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+                >
+                  <Camera className="w-3.5 h-3.5 text-teal-400" />
+                  <span>Daily Camera</span>
+                </button>
                 <button
                   type="button"
                   onClick={onLogWaterCup}
                   className="px-3 py-1.5 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/35 text-sky-200 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
                 >
                   <Droplets className="w-3.5 h-3.5 text-sky-400" />
-                  <span>Drink Water ({waterCompleted}/{waterGoal})</span>
+                  <span>Water ({waterCompleted}/{waterGoal})</span>
                 </button>
                 <button
                   type="button"
@@ -519,7 +434,7 @@ export const LivingWorldSanctuary: React.FC<LivingWorldSanctuaryProps> = ({
                   style={{ backgroundColor: styleSettings.accentColor }}
                 >
                   <Plus className="w-3.5 h-3.5" />
-                  <span>Plant New Habit</span>
+                  <span>Add Habit</span>
                 </button>
               </div>
             </div>
@@ -689,7 +604,7 @@ export const LivingWorldSanctuary: React.FC<LivingWorldSanctuaryProps> = ({
                         </div>
                       </div>
 
-                      {/* Bottom Metadata & Quick Inspect / Edit */}
+                      {/* Bottom Metadata & Quick Camera / Inspect / Edit */}
                       <div className="flex items-center justify-between gap-2 mt-2.5 text-[11px] text-slate-400">
                         <div className="flex items-center gap-2 font-mono-tabular">
                           <span className="text-amber-300">
@@ -706,6 +621,18 @@ export const LivingWorldSanctuary: React.FC<LivingWorldSanctuaryProps> = ({
                         </div>
 
                         <div className="flex items-center gap-1">
+                          <button
+                            type="button"
+                            onClick={() =>
+                              onOpenCameraForHabit
+                                ? onOpenCameraForHabit(habit.id)
+                                : onNavigateTab('dailylog')
+                            }
+                            className="p-1 rounded hover:bg-slate-800 text-slate-400 hover:text-teal-300 transition-colors cursor-pointer"
+                            title="Snap Daily Photo Update for this habit"
+                          >
+                            <Camera className="w-3.5 h-3.5" />
+                          </button>
                           <button
                             type="button"
                             onClick={() => onInspectHabit(habit)}
@@ -750,12 +677,12 @@ export const LivingWorldSanctuary: React.FC<LivingWorldSanctuaryProps> = ({
               onClick={() => onNavigateTab('habits')}
               className="text-teal-300 hover:text-teal-200 font-medium cursor-pointer whitespace-nowrap"
             >
-              Open Full Habit Archive →
+              Manage All Habits →
             </button>
           </div>
         </section>
 
-        {/* RIGHT 4 COLS: CITADEL OF GOALS & SANCTUARY RELICS */}
+        {/* RIGHT 4 COLS: CITADEL OF GOALS & DEDICATED SECTION SHORTCUTS */}
         <section
           className="lg:col-span-4 rounded-2xl border border-slate-800/90 p-5 shadow-xl flex flex-col justify-between"
           style={panelBgStyle}
@@ -765,10 +692,10 @@ export const LivingWorldSanctuary: React.FC<LivingWorldSanctuaryProps> = ({
               <div>
                 <h2 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
                   <span>🏰</span>
-                  <span>Citadel Milestones</span>
+                  <span>Active Goals</span>
                 </h2>
                 <p className="text-xs text-slate-400 mt-0.5">
-                  Long-term quests shaping your sanctuary
+                  Long-term milestones shaping your sanctuary
                 </p>
               </div>
               <button
@@ -847,175 +774,93 @@ export const LivingWorldSanctuary: React.FC<LivingWorldSanctuaryProps> = ({
             </div>
           </div>
 
-          {/* Unlocked World Relics Showcase */}
-          <div className="mt-5 pt-4 border-t border-slate-800/80">
-            <div className="flex items-center justify-between text-xs mb-2.5">
-              <span className="font-semibold text-slate-200">
-                Sanctuary Artifacts ({unlockedObjectIds.length}/
-                {ROOM_OBJECT_CATALOG.length})
-              </span>
-              <button
-                type="button"
-                onClick={() => onNavigateTab('myspace')}
-                className="text-teal-300 hover:text-teal-200 text-[11px] font-medium cursor-pointer"
-              >
-                Place in Room →
-              </button>
-            </div>
-            <div className="flex flex-wrap gap-1.5">
-              {ROOM_OBJECT_CATALOG.slice(0, 10).map((item) => {
-                const unlocked = unlockedObjectIds.includes(item.id);
-                return (
-                  <div
-                    key={item.id}
-                    title={
-                      unlocked
-                        ? `${item.name}: ${item.description}`
-                        : `Locked — ${item.unlockRequirementLabel}`
-                    }
-                    className={`w-8 h-8 rounded-lg flex items-center justify-center text-sm border transition-opacity ${
-                      unlocked
-                        ? 'bg-slate-900/90 border-slate-700/80 text-white'
-                        : 'bg-slate-950/40 border-slate-800/50 opacity-35 grayscale'
-                    }`}
-                  >
-                    {item.icon}
+          {/* Dedicated Sections Quick Launcher & Sanctuary Artifacts */}
+          <div className="mt-5 pt-4 border-t border-slate-800/80 space-y-4">
+            <div>
+              <div className="text-xs font-semibold text-slate-200 mb-2">
+                Open Dedicated Section
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <button
+                  type="button"
+                  onClick={() =>
+                    onOpenCameraForHabit
+                      ? onOpenCameraForHabit()
+                      : onNavigateTab('dailylog')
+                  }
+                  className="p-2.5 rounded-xl bg-slate-950/75 hover:bg-slate-900 border border-slate-800 text-left flex items-center gap-2.5 transition-colors cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-teal-500/15 border border-teal-400/30 flex items-center justify-center text-teal-300 shrink-0">
+                    <Camera className="w-4 h-4" />
                   </div>
-                );
-              })}
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-white truncate">
+                      Daily Camera
+                    </div>
+                    <div className="text-[10px] text-slate-400 truncate">
+                      Photo check-in
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('timer')}
+                  className="p-2.5 rounded-xl bg-slate-950/75 hover:bg-slate-900 border border-slate-800 text-left flex items-center gap-2.5 transition-colors cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-indigo-500/15 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shrink-0">
+                    <Timer className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-white truncate">
+                      Focus Timer
+                    </div>
+                    <div className="text-[10px] text-slate-400 truncate">
+                      {focusMinutesToday}m today
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('music')}
+                  className="p-2.5 rounded-xl bg-slate-950/75 hover:bg-slate-900 border border-slate-800 text-left flex items-center gap-2.5 transition-colors cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-amber-500/15 border border-amber-400/30 flex items-center justify-center text-amber-300 shrink-0">
+                    <Music className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-white truncate">
+                      Music Studio
+                    </div>
+                    <div className="text-[10px] text-slate-400 truncate">
+                      Audio & ambience
+                    </div>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => onNavigateTab('myspace')}
+                  className="p-2.5 rounded-xl bg-slate-950/75 hover:bg-slate-900 border border-slate-800 text-left flex items-center gap-2.5 transition-colors cursor-pointer"
+                >
+                  <div className="w-8 h-8 rounded-lg bg-purple-500/15 border border-purple-400/30 flex items-center justify-center text-purple-300 shrink-0">
+                    <Sparkles className="w-4 h-4" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-semibold text-white truncate">
+                      My Space
+                    </div>
+                    <div className="text-[10px] text-slate-400 truncate">
+                      {unlockedObjectIds.length}/{ROOM_OBJECT_CATALOG.length} relics
+                    </div>
+                  </div>
+                </button>
+              </div>
             </div>
           </div>
         </section>
       </div>
-
-      {/* 3. INTERACTIVE REALM PORTALS (SCENE TRAVEL & SOUNDSCAPE PAIRING) */}
-      <section
-        id="living-realm-portals"
-        className="rounded-2xl border border-slate-800/90 p-5 shadow-xl"
-        style={panelBgStyle}
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-          <div>
-            <h2 className="text-base font-bold text-white tracking-tight flex items-center gap-2">
-              <span>🌀</span>
-              <span>Interactive Realm Portals</span>
-            </h2>
-            <p className="text-xs text-slate-400 mt-0.5">
-              Travel across Habitra’s floating islands, cozy interiors, and astral sanctuaries. Each realm pairs with its own lighting and soundscape.
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {/* Auto-Sync Soundscape Toggle */}
-            <button
-              type="button"
-              onClick={() => setSyncAudioWithPortal((v) => !v)}
-              className={`px-3 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap ${
-                syncAudioWithPortal
-                  ? 'bg-amber-500/20 border-amber-400/40 text-amber-200'
-                  : 'bg-slate-950/70 border-slate-800 text-slate-400'
-              }`}
-            >
-              <Music className="w-3.5 h-3.5" />
-              <span>
-                {syncAudioWithPortal ? 'Sync Realm Audio: On' : 'Sync Realm Audio: Off'}
-              </span>
-            </button>
-
-            {/* Category Filter */}
-            <div className="flex items-center gap-1 p-1 rounded-xl bg-slate-950/80 border border-slate-800/90">
-              {['All', 'Nature', 'Indoor', 'Transit', 'Sci-Fi'].map((cat) => (
-                <button
-                  key={cat}
-                  type="button"
-                  onClick={() => setPortalCategory(cat)}
-                  className={`px-2.5 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer whitespace-nowrap ${
-                    portalCategory === cat
-                      ? 'bg-slate-800 text-white'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {cat}
-                </button>
-              ))}
-            </div>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
-          {featuredScenes.slice(0, 8).map((sc) => {
-            const isActive = environment.sceneId === sc.id;
-            return (
-              <button
-                key={sc.id}
-                type="button"
-                onClick={() =>
-                  handleTravelToRealm(
-                    sc.id,
-                    sc.defaultWeather,
-                    sc.defaultTime,
-                    sc.defaultAmbient
-                  )
-                }
-                className={`group relative rounded-xl overflow-hidden border text-left transition-all duration-200 cursor-pointer flex flex-col justify-between h-40 ${
-                  isActive
-                    ? 'border-teal-400 ring-2 ring-teal-400/30 shadow-xl'
-                    : 'border-slate-800/90 hover:border-slate-600'
-                }`}
-              >
-                {/* Portal Backdrop Image or Gradient */}
-                {sc.imageUrl ? (
-                  <img
-                    src={sc.imageUrl}
-                    alt={sc.name}
-                    referrerPolicy="no-referrer"
-                    className="absolute inset-0 w-full h-full object-cover object-center group-hover:scale-105 transition-transform duration-500"
-                  />
-                ) : (
-                  <div
-                    className="absolute inset-0"
-                    style={{
-                      background: `linear-gradient(135deg, ${sc.skyGradient[0]}, ${sc.skyGradient[1]}, ${sc.skyGradient[2]})`,
-                    }}
-                  />
-                )}
-
-                {/* Measured Contrast Scrim */}
-                <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/45 to-slate-950/20" />
-
-                {/* Top Status Row */}
-                <div className="relative z-10 p-3 flex items-center justify-between w-full">
-                  <span className="text-[11px] font-medium text-slate-200 bg-slate-950/75 px-2 py-0.5 rounded-md backdrop-blur-md">
-                    {sc.category}
-                  </span>
-                  {isActive && (
-                    <span className="text-[11px] font-semibold text-teal-300 bg-slate-950/85 px-2 py-0.5 rounded-md border border-teal-400/40">
-                      Current Realm
-                    </span>
-                  )}
-                </div>
-
-                {/* Bottom Portal Title & Metadata */}
-                <div className="relative z-10 p-3 w-full">
-                  <div className="text-sm font-bold text-white group-hover:text-teal-200 transition-colors truncate">
-                    {sc.name}
-                  </div>
-                  <div className="text-[11px] text-slate-300 truncate">
-                    {sc.subtitle}
-                  </div>
-                  <div className="flex items-center gap-1.5 text-[10px] text-slate-400 mt-1 font-mono-tabular capitalize">
-                    <span>{sc.defaultWeather.replace('_', ' ')}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>{sc.defaultTime}</span>
-                    <span aria-hidden="true">·</span>
-                    <span>{sc.defaultAmbient.replace('_', ' ')}</span>
-                  </div>
-                </div>
-              </button>
-            );
-          })}
-        </div>
-      </section>
     </div>
   );
 };

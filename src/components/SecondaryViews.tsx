@@ -635,7 +635,7 @@ export const HabitsManagementView: React.FC<HabitsManagementViewProps> = ({
                 className="p-4 rounded-xl bg-slate-900/75 border border-slate-800/90 hover:border-slate-700 transition-all flex flex-col justify-between gap-3"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
                     <button
                       type="button"
                       onClick={() => onToggleCompletion(habit.id, selectedStr)}
@@ -650,13 +650,13 @@ export const HabitsManagementView: React.FC<HabitsManagementViewProps> = ({
                       )}
                     </button>
 
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-base">{habit.icon}</span>
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <span className="text-base shrink-0">{habit.icon}</span>
                         <button
                           type="button"
                           onClick={() => onInspectHabit(habit)}
-                          className={`text-sm font-semibold text-left hover:text-indigo-300 transition-colors cursor-pointer ${
+                          className={`text-sm font-semibold text-left hover:text-indigo-300 transition-colors cursor-pointer truncate ${
                             st.isCompletedOnDate
                               ? 'text-white'
                               : 'text-slate-200'
@@ -894,7 +894,7 @@ export const GoalsManagementView: React.FC<GoalsManagementViewProps> = ({
                 className="p-4 rounded-xl bg-slate-900/75 border border-slate-800/90 flex flex-col justify-between gap-3"
               >
                 <div className="flex items-start justify-between gap-3">
-                  <div className="flex items-start gap-3">
+                  <div className="flex items-start gap-3 min-w-0 flex-1">
                     <div
                       className="w-10 h-10 rounded-xl flex items-center justify-center text-lg shrink-0"
                       style={{
@@ -904,9 +904,9 @@ export const GoalsManagementView: React.FC<GoalsManagementViewProps> = ({
                     >
                       {goal.icon || '🎯'}
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <h3 className="text-sm font-semibold text-white">
+                    <div className="min-w-0 flex-1">
+                      <div className="flex items-center gap-2 min-w-0">
+                        <h3 className="text-sm font-semibold text-white truncate">
                           {goal.title}
                         </h3>
                       </div>

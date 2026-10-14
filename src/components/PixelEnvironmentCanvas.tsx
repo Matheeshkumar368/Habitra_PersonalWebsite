@@ -54,7 +54,7 @@ interface Particle {
   kind: 'weather' | 'river' | 'music' | 'spirit';
 }
 
-export const PixelEnvironmentCanvas: React.FC<PixelEnvironmentCanvasProps> = ({
+const PixelEnvironmentCanvasComponent: React.FC<PixelEnvironmentCanvasProps> = ({
   environment,
   styleSettings,
   isFocusTimerRunning,
@@ -146,11 +146,11 @@ export const PixelEnvironmentCanvas: React.FC<PixelEnvironmentCanvasProps> = ({
 
     const baseCount = isRain
       ? weather === 'heavy_rain' || weather === 'storm'
-        ? 150
-        : 85
+        ? 55
+        : 35
       : isSnow
-      ? 75
-      : 48;
+      ? 30
+      : 22;
 
     const count = Math.max(0, Math.round(baseCount * densityFactor));
     const pixelStep = Math.max(2, styleSettings.pixelDensity * 2);
@@ -208,12 +208,24 @@ export const PixelEnvironmentCanvas: React.FC<PixelEnvironmentCanvasProps> = ({
 
     let tick = 0;
     let lightningAlpha = 0;
+    let lastRenderTime = 0;
+    const targetFps = isRain || isSnow ? 36 : 28;
+    const minFrameDelta = 1000 / targetFps;
 
-    const renderFrame = () => {
+    const renderFrame = (timestamp?: number) => {
       animId = 0;
       if (lowPowerBackgroundMode && isDocHidden) {
         return;
       }
+
+      const now = timestamp || performance.now();
+      if (lastRenderTime && now - lastRenderTime < minFrameDelta) {
+        if (intensityMultiplier > 0 && !(lowPowerBackgroundMode && isDocHidden)) {
+          animId = window.requestAnimationFrame(renderFrame);
+        }
+        return;
+      }
+      lastRenderTime = now;
 
       tick += 0.022;
       ctx.clearRect(0, 0, width, height);
@@ -545,8 +557,27 @@ export const PixelEnvironmentCanvas: React.FC<PixelEnvironmentCanvasProps> = ({
         background: `linear-gradient(160deg, ${scene.skyGradient[0]}, ${scene.skyGradient[1]}, ${scene.skyGradient[2]})`,
       }}
     >
-      {/* Generated Pixel Art Scene Image with Zero-Broken-Image fallback */}
-      {scene.imageUrl && !imgFailed && (
+      {/* Custom Uploaded Video/Image Backdrop OR Generated Pixel Art Scene Image */}
+      {environment.customBackgroundUrl ? (
+        environment.customBackgroundType === 'video' ? (
+          <video
+            src={environment.customBackgroundUrl}
+            autoPlay
+            loop
+            muted
+            playsInline
+            className="w-full h-full object-cover object-center pointer-events-none"
+          />
+        ) : (
+          <img
+            src={environment.customBackgroundUrl}
+            alt="Custom Realm Backdrop"
+            referrerPolicy="no-referrer"
+            onError={() => setImgFailed(true)}
+            className="w-full h-full object-cover object-center pointer-events-none"
+          />
+        )
+      ) : scene.imageUrl && !imgFailed ? (
         <img
           src={scene.imageUrl}
           alt={`${scene.name} — ${scene.subtitle}`}
@@ -556,7 +587,7 @@ export const PixelEnvironmentCanvas: React.FC<PixelEnvironmentCanvasProps> = ({
             styleSettings.pixelDensity >= 3 ? 'pixelated' : ''
           } ${isFocusTimerRunning ? 'scale-[1.02]' : 'scale-100'}`}
         />
-      )}
+      ) : null}
 
       {/* Time of Day & Warm/Cool Lighting Tint */}
       <div
@@ -730,6 +761,8 @@ export const PixelEnvironmentCanvas: React.FC<PixelEnvironmentCanvasProps> = ({
     </div>
   );
 };
+
+export const PixelEnvironmentCanvas = React.memo(PixelEnvironmentCanvasComponent);
 
 // Procedural pixel-art fallback & custom scene renderer for scenes without static image (e.g. Space Station, Sunset Beach)
 function drawProceduralPixelScene(
