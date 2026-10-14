@@ -39,6 +39,7 @@ import {
   STARTER_REMINDER_TEMPLATES,
 } from '../constants/scenesAndPresets';
 import { hashPasswordWithSalt } from '../db/indexedDb';
+import { HabitraLogo } from './HabitraLogo';
 import {
   AmbientSoundId,
   AnimationIntensity,
@@ -1795,19 +1796,7 @@ export const WelcomeWizardModal: React.FC<WelcomeWizardModalProps> = ({
 
       {/* Top Navigation & Accessibility Bar */}
       <header className="relative z-10 w-full max-w-5xl mx-auto px-4 sm:px-6 pt-4 sm:pt-6 flex flex-wrap items-center justify-between gap-3">
-        <div className="flex items-center gap-2.5">
-          <div className="w-9 h-9 rounded-xl bg-teal-500/20 border border-teal-400/40 flex items-center justify-center text-lg shadow">
-            🏝️
-          </div>
-          <div>
-            <div className="text-sm font-bold text-white tracking-tight">
-              Habitra
-            </div>
-            <div className="text-[11px] text-teal-300 font-medium">
-              Small Habits. Big Life.
-            </div>
-          </div>
-        </div>
+        <HabitraLogo variant="full" size="md" />
 
         {/* Step Pills when inside Wizard */}
         {step > 0 && (

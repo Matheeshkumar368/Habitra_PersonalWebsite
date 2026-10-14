@@ -56,6 +56,7 @@ interface CommandPaletteModalProps {
   onOpenJournal: (dateStr?: string) => void;
   onOpenNotifications: () => void;
   onInspectHabit: (habit: Habit) => void;
+  onReplayWelcomeAnimation?: () => void;
 }
 
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
@@ -78,6 +79,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onOpenJournal,
   onOpenNotifications,
   onInspectHabit,
+  onReplayWelcomeAnimation,
 }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -203,6 +205,21 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           onNavigateTab('settings');
         },
       },
+      ...(onReplayWelcomeAnimation
+        ? [
+            {
+              id: 'cmd_welcome_animation',
+              category: 'Quick Command',
+              icon: '✨',
+              title: 'Play Magical Welcome Experience',
+              subtitle: 'Replay the cinematic awakening animation and world portal',
+              action: () => {
+                onClose();
+                onReplayWelcomeAnimation();
+              },
+            },
+          ]
+        : []),
     ];
 
     const sceneCommands = PIXEL_SCENES.slice(0, 6).map((scene) => ({

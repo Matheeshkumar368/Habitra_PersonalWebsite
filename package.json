@@ -34,6 +34,8 @@
       "public/icon.png",
       "public/tray-icon.png",
       "public/icon.svg",
+      "public/images/habitra-logo.png",
+      "public/images/habitra-logo.svg",
       "package.json",
       "!**/*.map",
       "!**/.env*",

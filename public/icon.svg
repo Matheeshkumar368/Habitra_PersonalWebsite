@@ -1,22 +1,91 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
   <defs>
-    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#0f172a" />
-      <stop offset="50%" stop-color="#1e1b4b" />
-      <stop offset="100%" stop-color="#312e81" />
+    <!-- Background squircle gradient (purple to vibrant orange) -->
+    <linearGradient id="habitraIconGrad" x1="15%" y1="90%" x2="85%" y2="10%">
+      <stop offset="0%" stop-color="#4f46e5" />
+      <stop offset="35%" stop-color="#7c3aed" />
+      <stop offset="70%" stop-color="#e11d48" />
+      <stop offset="100%" stop-color="#f97316" />
     </linearGradient>
-    <linearGradient id="leaf" x1="0%" y1="0%" x2="100%" y2="100%">
-      <stop offset="0%" stop-color="#34d399" />
-      <stop offset="100%" stop-color="#10b981" />
+
+    <!-- Leaf highlight gradient -->
+    <linearGradient id="leafGlow" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f97316" />
+      <stop offset="100%" stop-color="#fdba74" />
+    </linearGradient>
+
+    <!-- Left stem loop subtle glow -->
+    <linearGradient id="stemGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="rgba(255, 255, 255, 0.45)" />
+      <stop offset="100%" stop-color="rgba(255, 255, 255, 0.9)" />
     </linearGradient>
   </defs>
-  <rect width="512" height="512" rx="112" fill="url(#bg)" />
-  <rect x="36" y="36" width="440" height="440" rx="88" fill="none" stroke="#6366f1" stroke-width="8" stroke-opacity="0.35" />
-  <!-- Pixel-style sprout & cozy window -->
-  <rect x="136" y="320" width="240" height="28" rx="8" fill="#f59e0b" />
-  <rect x="176" y="348" width="160" height="68" rx="10" fill="#d97706" />
-  <rect x="244" y="216" width="24" height="108" rx="6" fill="url(#leaf)" />
-  <path d="M256 228 C180 228 156 156 228 148 C252 146 256 196 256 228 Z" fill="url(#leaf)" />
-  <path d="M256 252 C332 252 356 180 284 172 C260 170 256 220 256 252 Z" fill="#6ee7b7" />
-  <circle cx="380" cy="132" r="24" fill="#fde047" />
+
+  <!-- Squircle rounded container -->
+  <rect x="32" y="32" width="448" height="448" rx="116" fill="url(#habitraIconGrad)" />
+
+  <!-- Inner ambient depth stroke -->
+  <rect x="36" y="36" width="440" height="440" rx="112" fill="none" stroke="rgba(255, 255, 255, 0.18)" stroke-width="6" />
+
+  <!-- Stylized H with organic leaf -->
+  <!-- Left vertical capsule loop -->
+  <path
+    d="M 188 152
+       C 160 152 138 174 138 202
+       L 138 310
+       C 138 338 160 360 188 360
+       C 216 360 238 338 238 310
+       L 238 202
+       C 238 174 216 152 188 152 Z"
+    fill="none"
+    stroke="url(#stemGrad)"
+    stroke-width="32"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Right vertical U-shape stem -->
+  <path
+    d="M 374 230
+       L 374 310
+       C 374 338 352 360 324 360
+       C 296 360 274 338 274 310
+       L 274 245"
+    fill="none"
+    stroke="#ffedd5"
+    stroke-width="32"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Graceful ribbon curve connecting left to right and extending into the leaf -->
+  <path
+    d="M 148 316
+       C 170 300 216 280 256 256
+       C 296 232 328 198 344 158"
+    fill="none"
+    stroke="#ffedd5"
+    stroke-width="30"
+    stroke-linecap="round"
+  />
+
+  <!-- Stylized Leaf at top-right -->
+  <path
+    d="M 314 220
+       C 314 168 356 132 396 124
+       C 400 168 376 210 334 234
+       C 322 238 314 232 314 220 Z"
+    fill="url(#leafGlow)"
+  />
+
+  <!-- Delicate leaf central spine vein -->
+  <path
+    d="M 324 222
+       C 344 196 366 168 388 138"
+    fill="none"
+    stroke="#ea580c"
+    stroke-width="6"
+    stroke-linecap="round"
+    opacity="0.8"
+  />
 </svg>

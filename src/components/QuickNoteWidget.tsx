@@ -136,7 +136,7 @@ export const QuickNoteWidget: React.FC<QuickNoteWidgetProps> = ({
   };
 
   const handleCopy = () => {
-    soundEngine.playNotification();
+    soundEngine.playNotification('success');
     const fullContent =
       mode === 'text'
         ? text
@@ -160,7 +160,7 @@ export const QuickNoteWidget: React.FC<QuickNoteWidgetProps> = ({
 
     if (!fullContent.trim()) return;
 
-    soundEngine.playNotification();
+    soundEngine.playNotification('success');
     if (onAppendToJournal) {
       onAppendToJournal(`\n\n### ⚡ Quick Note (${new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })})\n${fullContent}`);
       setJournalAppended(true);

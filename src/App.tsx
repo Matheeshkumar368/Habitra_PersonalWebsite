@@ -50,6 +50,8 @@ import {
   ReminderFormModal,
   WelcomeWizardModal,
 } from './components/Modals';
+import { HabitraLogo } from './components/HabitraLogo';
+import { MagicalWelcomeExperience } from './components/MagicalWelcomeExperience';
 import { MusicPlayerView } from './components/MusicPlayerView';
 import { PixelEnvironmentCanvas } from './components/PixelEnvironmentCanvas';
 import { RightWorkspaceColumn } from './components/RightWorkspaceColumn';
@@ -175,6 +177,7 @@ export function App() {
   const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
   const [securityModalOpen, setSecurityModalOpen] = useState(false);
   const [welcomeModalOpen, setWelcomeModalOpen] = useState(false);
+  const [welcomeAnimationOpen, setWelcomeAnimationOpen] = useState(false);
 
   // New Overlays: Command Palette (Ctrl+K), Notification Center, Daily Journal, System Tray Mode
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
@@ -319,7 +322,7 @@ export function App() {
         },
       });
       if (!state.profile.hasSeenWelcome) {
-        setWelcomeModalOpen(true);
+        setWelcomeAnimationOpen(true);
       }
       setIsLoaded(true);
     });
@@ -1300,6 +1303,19 @@ export function App() {
         },
       };
     });
+  };
+
+  const handleEnterWorldFromWelcome = () => {
+    setWelcomeAnimationOpen(false);
+    handleUpdateProfile({ hasSeenWelcome: true });
+    if (!appState.profile.userNameConfigured && !appState.profile.userName) {
+      setWelcomeModalOpen(true);
+    }
+  };
+
+  const handleSkipWelcomeAnimation = () => {
+    setWelcomeAnimationOpen(false);
+    handleUpdateProfile({ hasSeenWelcome: true });
   };
 
   const handleUpdateSecurity = (patch: Partial<SecuritySettings>) => {
@@ -2299,20 +2315,16 @@ export function App() {
         <div className="p-3.5 flex-1 min-h-0 flex flex-col overflow-y-auto">
           {/* Brand Title Row */}
           <div className="flex items-center justify-between gap-2 px-1.5 py-2 mb-3">
-            <div className="flex items-center gap-2.5 min-w-0">
-              <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center text-base shrink-0">
-                🏡
-              </div>
-              {!sidebarCollapsed && (
-                <div className="min-w-0">
-                  <div className="text-sm font-bold text-white tracking-tight truncate">
-                    {appState.profile.appName || 'Habitra'}
-                  </div>
-                  <div className="text-[10px] text-slate-400 truncate">
-                    Small Habits. Big Life.
-                  </div>
-                </div>
-              )}
+            <div
+              className="flex items-center gap-2.5 min-w-0 cursor-pointer group"
+              onClick={() => setWelcomeAnimationOpen(true)}
+              title="Experience Habitra Magical Intro"
+            >
+              <HabitraLogo
+                variant={sidebarCollapsed ? 'icon' : 'full'}
+                size="md"
+                className="group-hover:opacity-95 transition-opacity"
+              />
             </div>
             <button
               type="button"
@@ -2427,19 +2439,7 @@ export function App() {
           >
             <div>
               <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-800">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-8 h-8 rounded-xl bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center text-base">
-                    🏡
-                  </div>
-                  <div>
-                    <div className="text-sm font-bold text-white">
-                      {appState.profile.appName || 'Habitra'}
-                    </div>
-                    <div className="text-[10px] text-slate-400">
-                      All Sections
-                    </div>
-                  </div>
-                </div>
+                <HabitraLogo variant="full" size="md" />
                 <button
                   type="button"
                   onClick={() => setMobileMenuOpen(false)}
@@ -4071,6 +4071,7 @@ export function App() {
                 onImportBackup={(restored) => setAppState(restored)}
                 onResetDefaults={handleResetAllData}
                 onOpenWelcomeWizard={() => setWelcomeModalOpen(true)}
+                onReplayWelcomeAnimation={() => setWelcomeAnimationOpen(true)}
                 onMinimizeToSystemTray={handleMinimizeToTray}
                 onTriggerDiagnosticNotification={
                   handleTriggerSpecificTestNotification
@@ -4212,6 +4213,7 @@ export function App() {
         }}
         onOpenNotifications={() => setNotificationCenterOpen(true)}
         onInspectHabit={(habit) => setInspectingHabitId(habit.id)}
+        onReplayWelcomeAnimation={() => setWelcomeAnimationOpen(true)}
       />
 
       <NotificationCenterModal
@@ -4378,6 +4380,15 @@ export function App() {
         }
         onQuickAddReminder={(remData) => handleSaveReminder(remData)}
         onRequestNotificationPermission={requestNotificationPermission}
+      />
+
+      {/* Magical Animated Welcome Experience for First Launch & Replay */}
+      <MagicalWelcomeExperience
+        isOpen={welcomeAnimationOpen}
+        userName={appState.profile.userName}
+        accentColor={appState.style.accentColor}
+        onEnterWorld={handleEnterWorldFromWelcome}
+        onSkip={handleSkipWelcomeAnimation}
       />
     </div>
   );

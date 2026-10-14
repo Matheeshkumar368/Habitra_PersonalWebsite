@@ -19,8 +19,10 @@ import {
   BarChart2,
   HardDrive,
   Keyboard,
+  Compass,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
+import { HabitraLogo } from './HabitraLogo';
 import { formatLocalYMD } from '../constants/scenesAndPresets';
 import { verifyIndexedDBHealth } from '../db/indexedDb';
 import {
@@ -1474,6 +1476,7 @@ interface SettingsAndBackupViewProps {
   onImportBackup: (state: AppDataState) => void;
   onResetDefaults: () => void;
   onOpenWelcomeWizard: () => void;
+  onReplayWelcomeAnimation?: () => void;
   onMinimizeToSystemTray?: () => void;
   onTriggerDiagnosticNotification?: (
     kind: 'water' | 'study' | 'eye' | 'exercise' | 'streak' | 'timer'
@@ -1498,6 +1501,7 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
   onImportBackup,
   onResetDefaults,
   onOpenWelcomeWizard,
+  onReplayWelcomeAnimation,
   onMinimizeToSystemTray,
   onTriggerDiagnosticNotification,
   onSimulateMissedReminder,
@@ -1593,17 +1597,38 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
                   : '● First-launch setup pending'}
               </p>
             </div>
-            <button
-              type="button"
-              onClick={onOpenWelcomeWizard}
-              className="px-3.5 py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/40 text-xs font-semibold text-indigo-200 flex items-center gap-1.5 cursor-pointer"
-            >
-              <Sparkles className="w-3.5 h-3.5" />
-              <span>Reopen Setup Wizard</span>
-            </button>
+            <div className="flex items-center gap-2">
+              {onReplayWelcomeAnimation && (
+                <button
+                  type="button"
+                  onClick={onReplayWelcomeAnimation}
+                  className="px-3.5 py-2 rounded-xl bg-violet-500/20 hover:bg-violet-500/30 border border-violet-400/40 text-xs font-semibold text-violet-200 flex items-center gap-1.5 cursor-pointer"
+                  title="Experience the magical animated welcome intro"
+                >
+                  <Compass className="w-3.5 h-3.5 text-violet-300" />
+                  <span>Welcome Animation</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onOpenWelcomeWizard}
+                className="px-3.5 py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/40 text-xs font-semibold text-indigo-200 flex items-center gap-1.5 cursor-pointer"
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                <span>Reopen Setup Wizard</span>
+              </button>
+            </div>
           </div>
 
           <div className="space-y-3">
+            {/* Official Habitra Brand Card */}
+            <div className="p-3.5 rounded-xl bg-[#090d19] border border-slate-800/80 flex flex-wrap items-center justify-between gap-4">
+              <HabitraLogo variant="full" size="lg" />
+              <div className="text-[11px] text-slate-400">
+                Official Habitra Habit Tracker Branding
+              </div>
+            </div>
+
             <div>
               <label className="block text-xs text-slate-400 mb-1">
                 Application Name

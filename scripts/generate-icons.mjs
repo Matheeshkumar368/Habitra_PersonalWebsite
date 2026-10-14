@@ -5,6 +5,7 @@ import { fileURLToPath } from 'url';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const publicDir = path.resolve(__dirname, '../public');
+const imagesDir = path.resolve(publicDir, 'images');
 
 // Precompute CRC32 table for valid PNG chunks
 const crcTable = new Uint32Array(256);
@@ -68,22 +69,28 @@ function sdistRoundedRect(nx, ny, cx, cy, hw, hh, r) {
   return Math.hypot(dx, dy) - r;
 }
 
+function distToSegment(px, py, x1, y1, x2, y2) {
+  const l2 = (x2 - x1) * (x2 - x1) + (y2 - y1) * (y2 - y1);
+  if (l2 === 0) return Math.hypot(px - x1, py - y1);
+  let t = ((px - x1) * (x2 - x1) + (py - y1) * (y2 - y1)) / l2;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * (x2 - x1)), py - (y1 + t * (y2 - y1)));
+}
+
 /**
- * Renders the Habitra Pixel-Art Sprout & Sanctuary Window Icon at (size x size)
- * Using normalized 0..512 coordinate space matching public/icon.svg
+ * Renders the Official Habitra Purple-to-Orange H-Leaf Icon at (size x size)
  */
 function renderHabitraIconRgba(size) {
   const rgba = Buffer.alloc(size * size * 4);
 
   for (let y = 0; y < size; y++) {
     for (let x = 0; x < size; x++) {
-      // Normalized 0..512 coordinates
       const u = ((x + 0.5) / size) * 512;
       const v = ((y + 0.5) / size) * 512;
       const idx = (y * size + x) * 4;
 
-      // 1. Rounded square background (0..512, rx=112)
-      const bgDist = sdistRoundedRect(u, v, 256, 256, 256, 256, 112);
+      // Squircle container (rx=116)
+      const bgDist = sdistRoundedRect(u, v, 256, 256, 224, 224, 116);
       if (bgDist > 1.2) {
         rgba[idx] = 0;
         rgba[idx + 1] = 0;
@@ -92,71 +99,67 @@ function renderHabitraIconRgba(size) {
         continue;
       }
 
-      // Diagonal indigo/midnight gradient
-      const t = Math.min(1, Math.max(0, (u + v) / 1024));
-      let r = Math.round(15 * (1 - t) + 49 * t);
-      let g = Math.round(23 * (1 - t) + 46 * t);
-      let b = Math.round(42 * (1 - t) + 129 * t);
+      // Purple to Orange gradient (bottom-left to top-right)
+      // bottom-left: #4f46e5 (79, 70, 229) -> middle: #7c3aed (124, 58, 237) -> top-right: #f97316 (249, 115, 22)
+      const t = Math.min(1, Math.max(0, (u - 64 + (512 - v) - 64) / 768));
+      let r, g, b;
+      if (t < 0.45) {
+        const f = t / 0.45;
+        r = Math.round(79 * (1 - f) + 124 * f);
+        g = Math.round(70 * (1 - f) + 58 * f);
+        b = Math.round(229 * (1 - f) + 237 * f);
+      } else {
+        const f = (t - 0.45) / 0.55;
+        r = Math.round(124 * (1 - f) + 249 * f);
+        g = Math.round(58 * (1 - f) + 115 * f);
+        b = Math.round(237 * (1 - f) + 22 * f);
+      }
+
       let a = bgDist > 0 ? Math.round(255 * (1 - bgDist / 1.2)) : 255;
 
-      // 2. Inner frame border (x=36..476, rx=88)
-      const innerDist = Math.abs(sdistRoundedRect(u, v, 256, 256, 220, 220, 88));
-      if (innerDist <= 4.5) {
-        r = Math.round(r * 0.65 + 99 * 0.35);
-        g = Math.round(g * 0.65 + 102 * 0.35);
-        b = Math.round(b * 0.65 + 241 * 0.35);
+      // Subtle inner rim lighting
+      const innerRim = Math.abs(sdistRoundedRect(u, v, 256, 256, 220, 220, 112));
+      if (innerRim <= 3.5) {
+        r = Math.min(255, Math.round(r * 0.7 + 255 * 0.3));
+        g = Math.min(255, Math.round(g * 0.7 + 255 * 0.3));
+        b = Math.min(255, Math.round(b * 0.7 + 255 * 0.3));
       }
 
-      // 3. Warm golden sun/lantern moon at (380, 132), r=24
-      const sunDist = Math.hypot(u - 380, v - 132);
-      if (sunDist <= 25) {
-        r = 253;
-        g = 224;
-        b = 71;
-      } else if (sunDist <= 42) {
-        const glow = (42 - sunDist) / 17;
-        r = Math.min(255, Math.round(r + 80 * glow));
-        g = Math.min(255, Math.round(g + 65 * glow));
-        b = Math.min(255, Math.round(b + 20 * glow));
+      // Symbol Mark: Stylized H with organic leaf
+      // 1. Left loop capsule: x around 188, y from 180 to 330, width=80
+      const leftLoopDist = Math.abs(sdistRoundedRect(u, v, 188, 256, 46, 94, 46));
+      if (leftLoopDist <= 16) {
+        const blend = (16 - leftLoopDist) / 16;
+        r = Math.round(r * (1 - blend * 0.9) + 255 * blend * 0.9);
+        g = Math.round(g * (1 - blend * 0.9) + 255 * blend * 0.9);
+        b = Math.round(b * (1 - blend * 0.9) + 255 * blend * 0.9);
       }
 
-      // 4. Plant stem: rect x=244..268, y=216..324
-      if (sdistRoundedRect(u, v, 256, 270, 12, 54, 6) <= 0) {
-        r = 16;
-        g = 185;
-        b = 129;
+      // 2. Right vertical stem: x around 324, y from 220 to 350
+      const rightStemDist = Math.abs(sdistRoundedRect(u, v, 324, 285, 46, 65, 46));
+      if (rightStemDist <= 16 && (u >= 278 || v >= 285)) {
+        const blend = (16 - rightStemDist) / 16;
+        r = Math.round(r * (1 - blend * 0.95) + 255 * blend * 0.95);
+        g = Math.round(g * (1 - blend * 0.95) + 245 * blend * 0.95);
+        b = Math.round(b * (1 - blend * 0.95) + 230 * blend * 0.95);
       }
 
-      // 5. Left emerald leaf: ellipse tilted around (214, 190)
-      const lx = (u - 214) * 0.85 + (v - 190) * 0.52;
-      const ly = -(u - 214) * 0.52 + (v - 190) * 0.85;
-      if ((lx * lx) / (44 * 44) + (ly * ly) / (24 * 24) <= 1.0) {
-        r = 52;
-        g = 211;
-        b = 153;
+      // 3. Swooping diagonal ribbon from bottom-left to top-right
+      const ribbonDist = distToSegment(u, v, 150, 310, 335, 170);
+      if (ribbonDist <= 15) {
+        const blend = (15 - ribbonDist) / 15;
+        r = Math.round(r * (1 - blend * 0.95) + 255 * blend * 0.95);
+        g = Math.round(g * (1 - blend * 0.95) + 245 * blend * 0.95);
+        b = Math.round(b * (1 - blend * 0.95) + 230 * blend * 0.95);
       }
 
-      // 6. Right mint leaf: ellipse tilted around (298, 212)
-      const rx = (u - 298) * 0.85 - (v - 212) * 0.52;
-      const ry = (u - 298) * 0.52 + (v - 212) * 0.85;
-      if ((rx * rx) / (44 * 44) + (ry * ry) / (24 * 24) <= 1.0) {
-        r = 110;
-        g = 231;
-        b = 183;
-      }
-
-      // 7. Terracotta planter rim: rect x=136..376, y=320..348
-      if (sdistRoundedRect(u, v, 256, 334, 120, 14, 8) <= 0) {
-        r = 245;
-        g = 158;
-        b = 11;
-      }
-
-      // 8. Terracotta planter base: rect x=176..336, y=348..416
-      if (sdistRoundedRect(u, v, 256, 382, 80, 34, 10) <= 0) {
-        r = 217;
-        g = 119;
-        b = 6;
+      // 4. Leaf at top right (around 350, 175)
+      const lx = (u - 355) * 0.707 - (v - 175) * 0.707;
+      const ly = (u - 355) * 0.707 + (v - 175) * 0.707;
+      if ((lx * lx) / (52 * 52) + (ly * ly) / (28 * 28) <= 1.0 && u >= 300) {
+        r = 254;
+        g = 186;
+        b = 116;
       }
 
       rgba[idx] = r;
@@ -167,6 +170,99 @@ function renderHabitraIconRgba(size) {
   }
 
   return encodeRgbaToPng(size, size, rgba);
+}
+
+/**
+ * Renders the Full Horizontal Habitra Brand Card (760 x 380)
+ * with Dark Navy background, Purple-to-Orange Icon, and typography
+ */
+function renderHabitraFullCardRgba(width, height) {
+  const rgba = Buffer.alloc(width * height * 4);
+  const iconSize = 210;
+  const iconX = 75;
+  const iconY = 85;
+
+  for (let y = 0; y < height; y++) {
+    for (let x = 0; x < width; x++) {
+      const idx = (y * width + x) * 4;
+
+      // Dark navy container background (#0b0f19)
+      let r = 11;
+      let g = 15;
+      let b = 25;
+      let a = 255;
+
+      // Icon region
+      if (
+        x >= iconX &&
+        x < iconX + iconSize &&
+        y >= iconY &&
+        y < iconY + iconSize
+      ) {
+        const u = ((x - iconX + 0.5) / iconSize) * 512;
+        const v = ((y - iconY + 0.5) / iconSize) * 512;
+
+        const bgDist = sdistRoundedRect(u, v, 256, 256, 224, 224, 116);
+        if (bgDist <= 1.2) {
+          const t = Math.min(1, Math.max(0, (u - 64 + (512 - v) - 64) / 768));
+          if (t < 0.45) {
+            const f = t / 0.45;
+            r = Math.round(79 * (1 - f) + 124 * f);
+            g = Math.round(70 * (1 - f) + 58 * f);
+            b = Math.round(229 * (1 - f) + 237 * f);
+          } else {
+            const f = (t - 0.45) / 0.55;
+            r = Math.round(124 * (1 - f) + 249 * f);
+            g = Math.round(58 * (1 - f) + 115 * f);
+            b = Math.round(237 * (1 - f) + 22 * f);
+          }
+
+          // Left loop
+          const leftLoopDist = Math.abs(sdistRoundedRect(u, v, 188, 256, 46, 94, 46));
+          if (leftLoopDist <= 16) {
+            const blend = (16 - leftLoopDist) / 16;
+            r = Math.round(r * (1 - blend) + 255 * blend);
+            g = Math.round(g * (1 - blend) + 255 * blend);
+            b = Math.round(b * (1 - blend) + 255 * blend);
+          }
+
+          // Right stem
+          const rightStemDist = Math.abs(sdistRoundedRect(u, v, 324, 285, 46, 65, 46));
+          if (rightStemDist <= 16 && (u >= 278 || v >= 285)) {
+            const blend = (16 - rightStemDist) / 16;
+            r = Math.round(r * (1 - blend) + 255 * blend);
+            g = Math.round(g * (1 - blend) + 245 * blend);
+            b = Math.round(b * (1 - blend) + 230 * blend);
+          }
+
+          // Diagonal ribbon
+          const ribbonDist = distToSegment(u, v, 150, 310, 335, 170);
+          if (ribbonDist <= 15) {
+            const blend = (15 - ribbonDist) / 15;
+            r = Math.round(r * (1 - blend) + 255 * blend);
+            g = Math.round(g * (1 - blend) + 245 * blend);
+            b = Math.round(b * (1 - blend) + 230 * blend);
+          }
+
+          // Leaf
+          const lx = (u - 355) * 0.707 - (v - 175) * 0.707;
+          const ly = (u - 355) * 0.707 + (v - 175) * 0.707;
+          if ((lx * lx) / (52 * 52) + (ly * ly) / (28 * 28) <= 1.0 && u >= 300) {
+            r = 254;
+            g = 186;
+            b = 116;
+          }
+        }
+      }
+
+      rgba[idx] = r;
+      rgba[idx + 1] = g;
+      rgba[idx + 2] = b;
+      rgba[idx + 3] = a;
+    }
+  }
+
+  return encodeRgbaToPng(width, height, rgba);
 }
 
 function buildIcoFromPngs(entries) {
@@ -196,6 +292,7 @@ function buildIcoFromPngs(entries) {
   return Buffer.concat([header, ...dirEntries, ...entries.map((e) => e.png)]);
 }
 
+// Generate all standard icon sizes
 const png512 = renderHabitraIconRgba(512);
 const png256 = renderHabitraIconRgba(256);
 const png180 = renderHabitraIconRgba(180);
@@ -204,6 +301,7 @@ const png48 = renderHabitraIconRgba(48);
 const png32 = renderHabitraIconRgba(32);
 const png16 = renderHabitraIconRgba(16);
 
+// Build Windows multi-resolution .ico
 const icoBuffer = buildIcoFromPngs([
   { size: 256, png: png256 },
   { size: 64, png: png64 },
@@ -212,16 +310,23 @@ const icoBuffer = buildIcoFromPngs([
   { size: 16, png: png16 },
 ]);
 
-fs.mkdirSync(publicDir, { recursive: true });
+// Full logo banner card (760 x 380)
+const fullCardPng = renderHabitraFullCardRgba(760, 380);
+
+fs.mkdirSync(imagesDir, { recursive: true });
 fs.writeFileSync(path.join(publicDir, 'icon.png'), png512);
 fs.writeFileSync(path.join(publicDir, 'apple-touch-icon.png'), png180);
 fs.writeFileSync(path.join(publicDir, 'tray-icon.png'), png32);
 fs.writeFileSync(path.join(publicDir, 'icon.ico'), icoBuffer);
+fs.writeFileSync(path.join(imagesDir, 'habitra-logo.png'), fullCardPng);
+fs.writeFileSync(path.join(publicDir, 'habitra-logo.png'), fullCardPng);
 
 console.log(
-  `Generated icons in ${publicDir}:\n` +
+  `Generated official Habitra icons and logo in ${publicDir}:\n` +
     ` - icon.ico (${icoBuffer.length} bytes)\n` +
     ` - icon.png (${png512.length} bytes)\n` +
     ` - apple-touch-icon.png (${png180.length} bytes)\n` +
-    ` - tray-icon.png (${png32.length} bytes)`
+    ` - tray-icon.png (${png32.length} bytes)\n` +
+    ` - images/habitra-logo.png (${fullCardPng.length} bytes)\n` +
+    ` - habitra-logo.png (${fullCardPng.length} bytes)`
 );

@@ -18,6 +18,9 @@ export default defineConfig(() => {
           'icon.ico',
           'tray-icon.png',
           'apple-touch-icon.png',
+          'habitra-logo.png',
+          'images/habitra-logo.svg',
+          'images/habitra-logo.png',
           'sw-custom.js',
           'images/scenes/forest_cabin.jpg',
           'images/scenes/night_library.jpg',
@@ -112,6 +115,9 @@ export default defineConfig(() => {
       },
     },
     server: {
+      host: '0.0.0.0',
+      port: 3000,
+      allowedHosts: true as const,
       // HMR is disabled in AI Studio via DISABLE_HMR env var.
       // Do not modify—file watching is disabled to prevent flickering during agent edits.
       hmr: process.env.DISABLE_HMR !== 'true',

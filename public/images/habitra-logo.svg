@@ -1,0 +1,128 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 380" width="760" height="380">
+  <defs>
+    <!-- Background card gradient -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0a0e1c" />
+      <stop offset="100%" stop-color="#0e1424" />
+    </linearGradient>
+
+    <!-- Icon squircle gradient (purple to vibrant orange) -->
+    <linearGradient id="iconSquircle" x1="15%" y1="90%" x2="85%" y2="10%">
+      <stop offset="0%" stop-color="#4f46e5" />
+      <stop offset="30%" stop-color="#7c3aed" />
+      <stop offset="68%" stop-color="#ea580c" />
+      <stop offset="100%" stop-color="#f97316" />
+    </linearGradient>
+
+    <!-- Leaf glow gradient -->
+    <linearGradient id="leafGrad" x1="0%" y1="100%" x2="100%" y2="0%">
+      <stop offset="0%" stop-color="#f97316" />
+      <stop offset="100%" stop-color="#fed7aa" />
+    </linearGradient>
+
+    <!-- Left stem loop subtle glow -->
+    <linearGradient id="stemGrad" x1="0%" y1="100%" x2="0%" y2="0%">
+      <stop offset="0%" stop-color="rgba(255, 255, 255, 0.4)" />
+      <stop offset="100%" stop-color="rgba(255, 255, 255, 0.95)" />
+    </linearGradient>
+
+    <!-- Drop shadow for the icon -->
+    <filter id="iconShadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000" flood-opacity="0.45" />
+    </filter>
+  </defs>
+
+  <!-- Deep dark navy card background matching the official asset -->
+  <rect width="760" height="380" rx="48" fill="url(#bgGrad)" />
+
+  <!-- LEFT: App Icon Squircle (x=110, y=70, size=240) -->
+  <g filter="url(#iconShadow)">
+    <rect x="110" y="70" width="240" height="240" rx="64" fill="url(#iconSquircle)" />
+    <rect x="112" y="72" width="236" height="236" rx="62" fill="none" stroke="rgba(255, 255, 255, 0.2)" stroke-width="3" />
+
+    <!-- Stylized H with organic leaf -->
+    <!-- Left vertical capsule loop -->
+    <path
+      d="M 188 135
+         C 173 135 161 147 161 162
+         L 161 218
+         C 161 233 173 245 188 245
+         C 203 245 215 233 215 218
+         L 215 162
+         C 215 147 203 135 188 135 Z"
+      fill="none"
+      stroke="url(#stemGrad)"
+      stroke-width="17"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+
+    <!-- Right vertical U-shape stem -->
+    <path
+      d="M 288 178
+         L 288 218
+         C 288 233 276 245 261 245
+         C 246 245 234 233 234 218
+         L 234 185"
+      fill="none"
+      stroke="#fff7ed"
+      stroke-width="17"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+
+    <!-- Connecting curved ribbon swooping across to leaf -->
+    <path
+      d="M 166 220
+         C 178 212 202 200 224 188
+         C 246 175 264 156 273 135"
+      fill="none"
+      stroke="#fff7ed"
+      stroke-width="16"
+      stroke-linecap="round"
+    />
+
+    <!-- Stylized leaf pointing diagonally up-right -->
+    <path
+      d="M 256 172
+         C 256 142 278 122 301 117
+         C 304 142 290 166 267 180
+         C 260 182 256 179 256 172 Z"
+      fill="url(#leafGrad)"
+    />
+
+    <!-- Leaf central vein -->
+    <path
+      d="M 262 173
+         C 273 158 285 143 297 126"
+      fill="none"
+      stroke="#ea580c"
+      stroke-width="3.5"
+      stroke-linecap="round"
+      opacity="0.85"
+    />
+  </g>
+
+  <!-- RIGHT: Wordmark & Subtitle -->
+  <!-- "Habitra" Wordmark -->
+  <text
+    x="396"
+    y="196"
+    fill="#ffffff"
+    font-family="'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    font-size="82"
+    font-weight="700"
+    letter-spacing="-1.5"
+  >Habitra</text>
+
+  <!-- "HABIT TRACKER" Subtitle -->
+  <text
+    x="400"
+    y="244"
+    fill="#94a3b8"
+    font-family="'Plus Jakarta Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif"
+    font-size="20"
+    font-weight="600"
+    letter-spacing="5"
+  >HABIT TRACKER</text>
+</svg>
