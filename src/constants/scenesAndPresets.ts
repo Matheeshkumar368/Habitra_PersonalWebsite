@@ -27,13 +27,64 @@ export interface SceneMetadata {
   particleType: 'rain' | 'fireflies' | 'dust' | 'snow' | 'stars' | 'sakura' | 'sparks';
 }
 
+/**
+ * Safely resolves the scene image asset path for Vite previews, relative paths, and Electron runtime.
+ * Automatically maps to confirmed existing artwork in /images/scenes/
+ */
+export function resolveSceneArtwork(sceneId?: string, rawUrl?: string): string {
+  if (rawUrl) {
+    if (
+      rawUrl.startsWith('http://') ||
+      rawUrl.startsWith('https://') ||
+      rawUrl.startsWith('data:') ||
+      rawUrl.startsWith('blob:')
+    ) {
+      return rawUrl;
+    }
+    if (rawUrl.startsWith('/images/')) {
+      return '.' + rawUrl;
+    }
+    if (rawUrl.startsWith('./images/')) {
+      return rawUrl;
+    }
+  }
+
+  // Map known scene IDs to verified existing artwork assets
+  switch (sceneId) {
+    case 'rainy_cafe':
+    case 'rainy_window':
+      return './images/scenes/rainy_cafe.jpg';
+    case 'study_room':
+    case 'night_city':
+    case 'cozy_bedroom':
+    case 'cyberpunk_room':
+      return './images/scenes/study_room.jpg';
+    case 'night_library':
+    case 'astral_observatory':
+    case 'japanese_study':
+    case 'space_station':
+      return './images/scenes/night_library.jpg';
+    case 'train_journey':
+    case 'train_station':
+    case 'beach':
+      return './images/scenes/train_journey.jpg';
+    case 'forest_cabin':
+    case 'living_sanctuary':
+    case 'floating_garden':
+    case 'mountain_cabin':
+    case 'garden':
+    default:
+      return './images/scenes/forest_cabin.jpg';
+  }
+}
+
 export const PIXEL_SCENES: SceneMetadata[] = [
   {
     id: 'living_sanctuary',
     name: 'Floating Sanctuary',
     subtitle: 'Sky Terrace & Bioluminescent River',
     category: 'Nature',
-    imageUrl: '/images/scenes/forest_cabin.jpg',
+    imageUrl: './images/scenes/forest_cabin.jpg',
     defaultWeather: 'clear',
     defaultTime: 'night',
     defaultAmbient: 'nature_night',
@@ -46,7 +97,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Spirit Blossom Island',
     subtitle: 'Luminescent Cherry Tree & Waterfall',
     category: 'Nature',
-    imageUrl: '/images/scenes/forest_cabin.jpg',
+    imageUrl: './images/scenes/forest_cabin.jpg',
     defaultWeather: 'clear',
     defaultTime: 'evening',
     defaultAmbient: 'forest',
@@ -59,7 +110,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Astral Observatory',
     subtitle: 'Starlit Archive & Golden Astrolabe',
     category: 'Indoor',
-    imageUrl: '/images/scenes/night_library.jpg',
+    imageUrl: './images/scenes/night_library.jpg',
     defaultWeather: 'clear',
     defaultTime: 'night',
     defaultAmbient: 'fireplace',
@@ -72,7 +123,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Study Room',
     subtitle: 'Rainy Night Study Desk',
     category: 'Indoor',
-    imageUrl: '/images/scenes/study_room.jpg',
+    imageUrl: './images/scenes/study_room.jpg',
     defaultWeather: 'rain',
     defaultTime: 'night',
     defaultAmbient: 'rain',
@@ -85,7 +136,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Rainy Café',
     subtitle: 'Warm Corner Espresso Bar',
     category: 'Indoor',
-    imageUrl: '/images/scenes/rainy_cafe.jpg',
+    imageUrl: './images/scenes/rainy_cafe.jpg',
     defaultWeather: 'rain',
     defaultTime: 'evening',
     defaultAmbient: 'cafe',
@@ -98,7 +149,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Train Journey',
     subtitle: 'Twilight Mountain Express',
     category: 'Transit',
-    imageUrl: '/images/scenes/train_journey.jpg',
+    imageUrl: './images/scenes/train_journey.jpg',
     defaultWeather: 'clear',
     defaultTime: 'evening',
     defaultAmbient: 'train',
@@ -111,7 +162,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Forest',
     subtitle: 'Emerald Woodland Sanctuary',
     category: 'Nature',
-    imageUrl: '/images/scenes/forest_cabin.jpg',
+    imageUrl: './images/scenes/forest_cabin.jpg',
     defaultWeather: 'clear',
     defaultTime: 'evening',
     defaultAmbient: 'forest',
@@ -124,7 +175,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Library',
     subtitle: 'Grand Vintage Archive',
     category: 'Indoor',
-    imageUrl: '/images/scenes/night_library.jpg',
+    imageUrl: './images/scenes/night_library.jpg',
     defaultWeather: 'clear',
     defaultTime: 'night',
     defaultAmbient: 'fireplace',
@@ -137,7 +188,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Night City',
     subtitle: 'Neon Skyline Rooftop',
     category: 'Urban',
-    imageUrl: '/images/scenes/study_room.jpg',
+    imageUrl: './images/scenes/study_room.jpg',
     defaultWeather: 'heavy_rain',
     defaultTime: 'night',
     defaultAmbient: 'rain',
@@ -150,7 +201,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Cozy Bedroom',
     subtitle: 'Warm Lo-Fi Loft Hideaway',
     category: 'Indoor',
-    imageUrl: '/images/scenes/study_room.jpg',
+    imageUrl: './images/scenes/study_room.jpg',
     defaultWeather: 'rain',
     defaultTime: 'night',
     defaultAmbient: 'rain',
@@ -163,7 +214,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Train Station',
     subtitle: 'Misty Platform at Dusk',
     category: 'Transit',
-    imageUrl: '/images/scenes/train_journey.jpg',
+    imageUrl: './images/scenes/train_journey.jpg',
     defaultWeather: 'rain',
     defaultTime: 'evening',
     defaultAmbient: 'train',
@@ -176,7 +227,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Mountain Cabin',
     subtitle: 'Snowy Alpine Hearth',
     category: 'Nature',
-    imageUrl: '/images/scenes/forest_cabin.jpg',
+    imageUrl: './images/scenes/forest_cabin.jpg',
     defaultWeather: 'snow',
     defaultTime: 'night',
     defaultAmbient: 'fireplace',
@@ -189,7 +240,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Rainy Window',
     subtitle: 'Bokeh Glass & Storm Drops',
     category: 'Indoor',
-    imageUrl: '/images/scenes/rainy_cafe.jpg',
+    imageUrl: './images/scenes/rainy_cafe.jpg',
     defaultWeather: 'heavy_rain',
     defaultTime: 'night',
     defaultAmbient: 'rain',
@@ -202,7 +253,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Beach',
     subtitle: 'Twilight Ocean Breeze',
     category: 'Nature',
-    imageUrl: '/images/scenes/train_journey.jpg',
+    imageUrl: './images/scenes/train_journey.jpg',
     defaultWeather: 'clear',
     defaultTime: 'evening',
     defaultAmbient: 'ocean',
@@ -215,7 +266,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Garden',
     subtitle: 'Zen Koi & Bamboo Courtyard',
     category: 'Nature',
-    imageUrl: '/images/scenes/forest_cabin.jpg',
+    imageUrl: './images/scenes/forest_cabin.jpg',
     defaultWeather: 'rain',
     defaultTime: 'afternoon',
     defaultAmbient: 'nature_night',
@@ -228,7 +279,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Space Station',
     subtitle: 'Low-Orbit Observation Deck',
     category: 'Sci-Fi',
-    imageUrl: '/images/scenes/night_library.jpg',
+    imageUrl: './images/scenes/night_library.jpg',
     defaultWeather: 'clear',
     defaultTime: 'night',
     defaultAmbient: 'brown_noise',
@@ -241,7 +292,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Cyberpunk Room',
     subtitle: 'High-Rise Synth Terminal',
     category: 'Sci-Fi',
-    imageUrl: '/images/scenes/study_room.jpg',
+    imageUrl: './images/scenes/study_room.jpg',
     defaultWeather: 'storm',
     defaultTime: 'night',
     defaultAmbient: 'rain',
@@ -254,7 +305,7 @@ export const PIXEL_SCENES: SceneMetadata[] = [
     name: 'Japanese Study',
     subtitle: 'Tatami & Shoji Lantern Room',
     category: 'Indoor',
-    imageUrl: '/images/scenes/night_library.jpg',
+    imageUrl: './images/scenes/night_library.jpg',
     defaultWeather: 'clear',
     defaultTime: 'evening',
     defaultAmbient: 'nature_night',

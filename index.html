@@ -2,6 +2,33 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
+    <script>
+      // Ensure window.fetch has a setter so extension inspectors (e.g. AI Studio devtools/inspector.js)
+      // can wrap or monitor window.fetch without throwing "Cannot set property fetch of #<Window> which has only a getter"
+      (function() {
+        try {
+          if (typeof window !== 'undefined') {
+            var _nativeFetch = typeof window.fetch === 'function' ? window.fetch.bind(window) : window.fetch;
+            var _currentFetch = _nativeFetch;
+            Object.defineProperty(window, 'fetch', {
+              configurable: true,
+              enumerable: true,
+              get: function() {
+                return _currentFetch;
+              },
+              set: function(val) {
+                _currentFetch = val;
+              }
+            });
+          }
+        } catch (err) {
+          // Fallback if defineProperty fails
+          try {
+            window.fetch = window.fetch ? window.fetch.bind(window) : window.fetch;
+          } catch (_) {}
+        }
+      })();
+    </script>
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#0b0f19" />
     <meta name="mobile-web-app-capable" content="yes" />

@@ -28,6 +28,7 @@ import {
   BUILTIN_MUSIC_TRACKS,
   PIXEL_SCENES,
   ROOM_OBJECT_CATALOG,
+  resolveSceneArtwork,
 } from '../constants/scenesAndPresets';
 import {
   AmbientSoundId,
@@ -115,6 +116,7 @@ export const CustomizeSpaceView: React.FC<CustomizeSpaceViewProps> = ({
   const [newPresetSubtitle, setNewPresetSubtitle] = useState('');
   const [showPresetCreator, setShowPresetCreator] = useState(false);
   const [newAudioPresetName, setNewAudioPresetName] = useState('');
+  const [failedPresetImages, setFailedPresetImages] = useState<Record<string, boolean>>({});
 
   const customBgInputRef = useRef<HTMLInputElement | null>(null);
   const [customBgStatus, setCustomBgStatus] = useState<string | null>(null);
@@ -290,17 +292,48 @@ export const CustomizeSpaceView: React.FC<CustomizeSpaceViewProps> = ({
                     background: `linear-gradient(135deg, ${sceneMeta.skyGradient[0]}, ${sceneMeta.skyGradient[1]}, ${sceneMeta.skyGradient[2]})`,
                   }}
                 >
-                  {sceneMeta.imageUrl && (
-                    <img
-                      src={sceneMeta.imageUrl}
-                      alt={preset.name}
-                      referrerPolicy="no-referrer"
-                      onError={(e) => {
-                        (e.currentTarget as HTMLElement).style.display = 'none';
-                      }}
-                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
-                    />
-                  )}
+                  {(() => {
+                    const artworkSrc = resolveSceneArtwork(preset.sceneId, sceneMeta.imageUrl);
+                    const isFailed = failedPresetImages[preset.id];
+
+                    if (isFailed) {
+                      return (
+                        <div className="absolute inset-0 flex flex-col items-center justify-center p-2 text-center overflow-hidden">
+                          <div
+                            className="absolute w-24 h-24 rounded-full blur-xl opacity-35 pointer-events-none"
+                            style={{ backgroundColor: preset.accentColor || sceneMeta.accentGlow }}
+                          />
+                          <div className="relative z-10 flex flex-col items-center">
+                            <span className="text-2xl mb-0.5 filter drop-shadow">{preset.badgeIcon}</span>
+                            <span className="text-[10px] font-semibold text-slate-200 tracking-wider uppercase font-mono truncate max-w-full">
+                              {sceneMeta.name}
+                            </span>
+                            <span className="text-[9px] text-slate-400 font-mono">
+                              {sceneMeta.category} Realm
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <img
+                        src={artworkSrc}
+                        alt={preset.name}
+                        loading="lazy"
+                        referrerPolicy="no-referrer"
+                        onError={(e) => {
+                          const currentSrc = (e.currentTarget as HTMLImageElement).src;
+                          if (currentSrc.includes('./images/')) {
+                            (e.currentTarget as HTMLImageElement).src = currentSrc.replace('./images/', '/images/');
+                          } else {
+                            setFailedPresetImages((prev) => ({ ...prev, [preset.id]: true }));
+                          }
+                        }}
+                        className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-500"
+                      />
+                    );
+                  })()}
                   <div className="absolute inset-0 bg-gradient-to-t from-slate-950/90 via-slate-950/20 to-transparent" />
                   <span className="absolute top-2 left-2 text-sm">
                     {preset.badgeIcon}

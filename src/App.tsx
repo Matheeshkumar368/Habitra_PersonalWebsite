@@ -52,6 +52,7 @@ import {
 import { HabitraLogo } from './components/HabitraLogo';
 import { HabitraIntroVideo } from './components/HabitraIntroVideo';
 import { PersistentStreamingPlayer } from './components/PersistentStreamingPlayer';
+import { CsvHabitImportModal } from './components/CsvHabitImportModal';
 import { MusicPlayerView } from './components/MusicPlayerView';
 import { PixelEnvironmentCanvas } from './components/PixelEnvironmentCanvas';
 import { RightWorkspaceColumn } from './components/RightWorkspaceColumn';
@@ -165,6 +166,7 @@ export function App() {
 
   // Modals state
   const [habitModalOpen, setHabitModalOpen] = useState(false);
+  const [csvImportModalOpen, setCsvImportModalOpen] = useState(false);
   const [editingHabit, setEditingHabit] = useState<Habit | null>(null);
   const [inspectingHabitId, setInspectingHabitId] = useState<string | null>(
     null

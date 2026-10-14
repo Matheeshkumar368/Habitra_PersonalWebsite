@@ -20,6 +20,7 @@ import {
   HardDrive,
   Keyboard,
   Compass,
+  FileSpreadsheet,
 } from 'lucide-react';
 import { soundEngine } from '../audio/soundEngine';
 import { HabitraLogo } from './HabitraLogo';
@@ -521,6 +522,7 @@ interface HabitsManagementViewProps {
   selectedDate: Date;
   onToggleCompletion: (habitId: string, dateStr: string) => void;
   onOpenAddHabit: () => void;
+  onOpenImportCsv?: () => void;
   onOpenEditHabit: (habit: Habit) => void;
   onInspectHabit: (habit: Habit) => void;
   onToggleArchiveHabit: (habitId: string) => void;
@@ -535,6 +537,7 @@ export const HabitsManagementView: React.FC<HabitsManagementViewProps> = ({
   selectedDate,
   onToggleCompletion,
   onOpenAddHabit,
+  onOpenImportCsv,
   onOpenEditHabit,
   onInspectHabit,
   onToggleArchiveHabit,
@@ -590,6 +593,18 @@ export const HabitsManagementView: React.FC<HabitsManagementViewProps> = ({
             </button>
           </div>
 
+          {onOpenImportCsv && (
+            <button
+              type="button"
+              onClick={onOpenImportCsv}
+              className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white bg-slate-900/90 hover:bg-slate-800 border border-slate-700/80 flex items-center gap-1.5 shadow transition-colors cursor-pointer whitespace-nowrap"
+              title="Bulk import habits from CSV"
+            >
+              <FileSpreadsheet className="w-4 h-4 text-indigo-400" />
+              <span>Import CSV</span>
+            </button>
+          )}
+
           <button
             type="button"
             onClick={onOpenAddHabit}
@@ -610,14 +625,26 @@ export const HabitsManagementView: React.FC<HabitsManagementViewProps> = ({
               : 'No habits created yet. Start building your daily routine!'}
           </p>
           {viewFilter === 'active' && (
-            <button
-              type="button"
-              onClick={onOpenAddHabit}
-              className="px-4 py-2 rounded-xl text-xs font-semibold text-white cursor-pointer"
-              style={{ backgroundColor: styleSettings.accentColor }}
-            >
-              Create First Habit
-            </button>
+            <div className="flex flex-wrap items-center justify-center gap-2.5">
+              {onOpenImportCsv && (
+                <button
+                  type="button"
+                  onClick={onOpenImportCsv}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold text-slate-300 hover:text-white bg-slate-900 border border-slate-700 hover:border-slate-600 flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <FileSpreadsheet className="w-4 h-4 text-indigo-400" />
+                  <span>Import from CSV</span>
+                </button>
+              )}
+              <button
+                type="button"
+                onClick={onOpenAddHabit}
+                className="px-4 py-2 rounded-xl text-xs font-semibold text-white cursor-pointer"
+                style={{ backgroundColor: styleSettings.accentColor }}
+              >
+                Create First Habit
+              </button>
+            </div>
           )}
         </div>
       ) : (

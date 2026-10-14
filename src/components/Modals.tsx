@@ -37,6 +37,7 @@ import {
   PIXEL_SCENES,
   STARTER_HABIT_TEMPLATES,
   STARTER_REMINDER_TEMPLATES,
+  resolveSceneArtwork,
 } from '../constants/scenesAndPresets';
 import { hashPasswordWithSalt } from '../db/indexedDb';
 import { HabitraLogo } from './HabitraLogo';
@@ -2133,17 +2134,26 @@ export const WelcomeWizardModal: React.FC<WelcomeWizardModalProps> = ({
                           : 'border-slate-800 hover:border-slate-600'
                       }`}
                     >
-                      {sc.imageUrl ? (
-                        <img
-                          src={sc.imageUrl}
-                          alt={sc.name}
-                          referrerPolicy="no-referrer"
-                          onError={(e) => {
-                            (e.currentTarget as HTMLElement).style.display = 'none';
-                          }}
-                          className="absolute inset-0 w-full h-full object-cover"
-                        />
-                      ) : (
+                      {(() => {
+                        const artwork = resolveSceneArtwork(sc.id, sc.imageUrl);
+                        return (
+                          <img
+                            src={artwork}
+                            alt={sc.name}
+                            loading="lazy"
+                            referrerPolicy="no-referrer"
+                            onError={(e) => {
+                              const current = (e.currentTarget as HTMLImageElement).src;
+                              if (current.includes('./images/')) {
+                                (e.currentTarget as HTMLImageElement).src = current.replace('./images/', '/images/');
+                              } else {
+                                (e.currentTarget as HTMLElement).style.display = 'none';
+                              }
+                            }}
+                            className="absolute inset-0 w-full h-full object-cover"
+                          />
+                        );
+                      })()}
                         <div
                           className="absolute inset-0"
                           style={{

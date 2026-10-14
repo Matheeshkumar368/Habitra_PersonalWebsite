@@ -119,20 +119,16 @@ export const PersistentStreamingPlayer: React.FC<PersistentStreamingPlayerProps>
   return (
     <div
       aria-label="Persistent Streaming Audio Player"
-      className={`transition-all duration-300 ${
-        isMusicTab
-          ? 'w-full mb-6'
-          : 'fixed bottom-4 right-4 z-40 max-w-sm sm:max-w-md w-[calc(100vw-2rem)]'
-      }`}
+      className="fixed bottom-4 right-4 z-30 w-[360px] sm:w-[400px] max-w-[calc(100vw-2rem)] transition-all duration-300"
     >
       <div
-        className="rounded-2xl border border-slate-700/80 bg-slate-950/95 backdrop-blur-xl shadow-2xl p-3 sm:p-4 text-white overflow-hidden"
+        className="rounded-2xl border border-slate-700/80 bg-slate-950/95 backdrop-blur-xl shadow-2xl p-3 sm:p-3.5 text-white overflow-hidden"
         style={{
-          boxShadow: '0 12px 36px -6px rgba(0, 0, 0, 0.7), 0 0 0 1px rgba(255, 255, 255, 0.08)',
+          boxShadow: '0 16px 40px -8px rgba(0, 0, 0, 0.8), 0 0 0 1px rgba(255, 255, 255, 0.08)',
         }}
       >
         {/* Header Bar */}
-        <div className="flex items-center justify-between gap-2 mb-2.5">
+        <div className="flex items-center justify-between gap-2 mb-2">
           <div className="flex items-center gap-2 min-w-0">
             <div
               className={`w-7 h-7 rounded-lg flex items-center justify-center shrink-0 ${
@@ -159,13 +155,11 @@ export const PersistentStreamingPlayer: React.FC<PersistentStreamingPlayerProps>
                 >
                   {isYouTubeActive ? 'YouTube' : 'Spotify'}
                 </span>
-                {!isMusicTab && (
-                  <span className="text-[10px] text-slate-400 font-mono">
-                    Persistent Background Audio
-                  </span>
-                )}
+                <span className="text-[10px] text-slate-400 font-mono truncate">
+                  Persistent Audio
+                </span>
               </div>
-              <div className="text-xs font-semibold text-white truncate max-w-[200px] sm:max-w-[260px]">
+              <div className="text-xs font-semibold text-white truncate max-w-[190px] sm:max-w-[220px]">
                 {streamTitle}
               </div>
             </div>
@@ -184,20 +178,18 @@ export const PersistentStreamingPlayer: React.FC<PersistentStreamingPlayerProps>
               </button>
             )}
 
-            {!isMusicTab && (
-              <button
-                type="button"
-                onClick={() => setIsMinimized((v) => !v)}
-                className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 cursor-pointer"
-                title={isMinimized ? 'Expand Player' : 'Collapse Player'}
-              >
-                {isMinimized ? (
-                  <Maximize2 className="w-3.5 h-3.5" />
-                ) : (
-                  <Minimize2 className="w-3.5 h-3.5" />
-                )}
-              </button>
-            )}
+            <button
+              type="button"
+              onClick={() => setIsMinimized((v) => !v)}
+              className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 cursor-pointer"
+              title={isMinimized ? 'Expand Player' : 'Minimize Player'}
+            >
+              {isMinimized ? (
+                <Maximize2 className="w-3.5 h-3.5" />
+              ) : (
+                <Minimize2 className="w-3.5 h-3.5" />
+              )}
+            </button>
 
             <button
               type="button"
@@ -213,19 +205,13 @@ export const PersistentStreamingPlayer: React.FC<PersistentStreamingPlayerProps>
         {/* Player Viewport (Kept continuously mounted so playback survives tab switching) */}
         <div
           className={`transition-all duration-200 overflow-hidden ${
-            isMinimized && !isMusicTab
+            isMinimized
               ? 'h-0 opacity-0 pointer-events-none mb-0'
               : 'opacity-100'
           }`}
         >
           {isYouTubeActive && (
-            <div
-              className={`rounded-xl overflow-hidden bg-black shadow-inner border border-slate-800 relative ${
-                isMusicTab
-                  ? 'aspect-video max-h-[460px] w-full mx-auto'
-                  : 'h-40 sm:h-48 w-full'
-              }`}
-            >
+            <div className="relative w-full aspect-video max-h-[195px] rounded-xl overflow-hidden bg-black shadow-inner border border-slate-800">
               <iframe
                 ref={youtubeIframeRef}
                 src={`https://www.youtube-nocookie.com/embed/${activeYouTubeId}?enablejsapi=1&origin=${
@@ -240,15 +226,11 @@ export const PersistentStreamingPlayer: React.FC<PersistentStreamingPlayerProps>
           )}
 
           {isSpotifyActive && (
-            <div
-              className={`rounded-xl overflow-hidden bg-black shadow-inner border border-slate-800 ${
-                isMusicTab ? 'max-w-2xl mx-auto' : ''
-              }`}
-            >
+            <div className="relative w-full rounded-xl overflow-hidden bg-black shadow-inner border border-slate-800">
               <iframe
                 src={`https://open.spotify.com/embed/${activeSpotifyUri}?utm_source=generator&theme=0`}
                 width="100%"
-                height={isMusicTab ? '352' : '152'}
+                height="152"
                 allow="autoplay; clipboard-write; encrypted-media; fullscreen; picture-in-picture"
                 loading="lazy"
                 title="Persistent Spotify Player"
@@ -259,15 +241,15 @@ export const PersistentStreamingPlayer: React.FC<PersistentStreamingPlayerProps>
 
           {/* Spotify Provider Notice */}
           {isSpotifyActive && (
-            <div className="mt-2 text-[10px] text-slate-400 flex items-center justify-between">
-              <span>Playback runs through the official Spotify embed.</span>
+            <div className="mt-1.5 text-[10px] text-slate-400 flex items-center justify-between">
+              <span>Official Spotify embed</span>
               <a
                 href={`https://open.spotify.com/${activeSpotifyUri}`}
                 target="_blank"
                 rel="noopener noreferrer"
                 className="text-emerald-400 hover:underline flex items-center gap-1"
               >
-                <span>Spotify App</span>
+                <span>Open in App</span>
                 <ExternalLink className="w-2.5 h-2.5" />
               </a>
             </div>
