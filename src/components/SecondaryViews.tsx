@@ -39,7 +39,9 @@ import {
   TimerSessionLog,
   UserProfile,
   VersionedBackupEntry,
+  WorkspaceMode,
 } from '../types/app';
+import { FinsaCurrency } from '../types/finsa';
 import {
   calculateHabitStreak,
   OverallDashboardStats,
@@ -1502,13 +1504,17 @@ interface SettingsAndBackupViewProps {
   onRestoreVersionedSnapshot?: (entry: VersionedBackupEntry) => void;
   onImportBackup: (state: AppDataState) => void;
   onResetDefaults: () => void;
-  onReplayIntroVideo?: () => void;
+  onReopenSetupWizard?: () => void;
   onMinimizeToSystemTray?: () => void;
   onTriggerDiagnosticNotification?: (
     kind: 'water' | 'study' | 'eye' | 'exercise' | 'streak' | 'timer'
   ) => void;
   onSimulateMissedReminder?: () => void;
   panelBgStyle: React.CSSProperties;
+  onUpdateStyle?: (patch: Partial<StyleSettings>) => void;
+  finsaCurrency?: FinsaCurrency;
+  onUpdateCurrency?: (currency: FinsaCurrency) => void;
+  onRestoreInterfaceDefaults?: () => void;
 }
 
 export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
@@ -1526,15 +1532,20 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
   onRestoreVersionedSnapshot,
   onImportBackup,
   onResetDefaults,
-  onReplayIntroVideo,
+  onReopenSetupWizard,
   onMinimizeToSystemTray,
   onTriggerDiagnosticNotification,
   onSimulateMissedReminder,
   panelBgStyle,
+  onUpdateStyle,
+  finsaCurrency = 'INR',
+  onUpdateCurrency,
+  onRestoreInterfaceDefaults,
 }) => {
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const [importStatus, setImportStatus] = useState<string | null>(null);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [interfaceResetNotice, setInterfaceResetNotice] = useState<string | null>(null);
 
   // Live Runtime & Storage Diagnostic State
   const [runtimeDiag, setRuntimeDiag] = useState(() =>
@@ -1623,15 +1634,15 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {onReplayIntroVideo && (
+              {onReopenSetupWizard && (
                 <button
                   type="button"
-                  onClick={onReplayIntroVideo}
+                  onClick={onReopenSetupWizard}
                   className="px-3.5 py-2 rounded-xl bg-indigo-500/20 hover:bg-indigo-500/30 border border-indigo-400/40 text-xs font-semibold text-indigo-200 flex items-center gap-1.5 cursor-pointer shadow transition-colors"
-                  title="Play the official Habitra logo reveal video intro"
+                  title="Reopen Setup Wizard to configure preferences anytime without losing data"
                 >
                   <Sparkles className="w-3.5 h-3.5 text-indigo-300" />
-                  <span>Replay Logo Reveal Intro</span>
+                  <span>Launch Setup Wizard</span>
                 </button>
               )}
             </div>
@@ -1698,7 +1709,7 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
                 Lock screen greeting:{' '}
                 <span className="text-slate-300 font-medium">
                   “
-                  {profile.userName.trim()
+                  {profile.userName && profile.userName.trim()
                     ? `Welcome back, ${profile.userName.trim()}`
                     : 'Welcome back'}
                   ”
@@ -1860,6 +1871,163 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
                 className="accent-indigo-500"
               />
             </label>
+          </div>
+        </div>
+
+        {/* Audio Sound Effects & Health Reminders Card */}
+        <div
+          className="rounded-2xl border border-slate-800/90 p-5 shadow-xl space-y-4"
+          style={panelBgStyle}
+        >
+          <div>
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <span>🔔</span>
+              <span>UI Sounds, Posture &amp; Quiet Hours</span>
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Fine-tune notification schedules, subtle interface sound chimes, and posture stretch alerts
+            </p>
+          </div>
+
+          <div className="space-y-3">
+            {/* UI Sound Effects Master Switch */}
+            <div className="p-3 rounded-xl bg-slate-900/75 border border-slate-800 space-y-2">
+              <label className="flex items-center justify-between text-xs text-slate-200 cursor-pointer">
+                <div>
+                  <div className="font-semibold text-white">Subtle UI Sound Effects</div>
+                  <div className="text-[11px] text-slate-400">
+                    Play gentle retro pixel-art chimes on clicks, task completions, and modal actions
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={profile.uiSoundEnabled !== false}
+                  onChange={(e) => {
+                    const enabled = e.target.checked;
+                    onUpdateProfile({ uiSoundEnabled: enabled });
+                    if (enabled) {
+                      soundEngine.playUiSound('action_complete');
+                    }
+                  }}
+                  className="accent-indigo-500"
+                />
+              </label>
+
+              {profile.uiSoundEnabled !== false && (
+                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-3 text-xs">
+                  <span className="text-slate-400 text-[11px]">Sound Volume</span>
+                  <div className="flex items-center gap-2 flex-1 max-w-[200px]">
+                    <input
+                      type="range"
+                      min="0"
+                      max="100"
+                      value={Math.round((profile.uiSoundVolume ?? 0.6) * 100)}
+                      onChange={(e) => {
+                        const vol = Number(e.target.value) / 100;
+                        onUpdateProfile({ uiSoundVolume: vol });
+                      }}
+                      className="w-full accent-indigo-500 cursor-pointer"
+                    />
+                    <span className="font-mono-tabular text-indigo-300 text-[11px] w-8 text-right">
+                      {Math.round((profile.uiSoundVolume ?? 0.6) * 100)}%
+                    </span>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => soundEngine.playUiSound('button_click')}
+                    className="px-2 py-0.5 rounded bg-slate-800 hover:bg-slate-700 text-slate-200 text-[10px] cursor-pointer"
+                  >
+                    Test
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {/* Posture & Stretch Reminders */}
+            <div className="p-3 rounded-xl bg-slate-900/75 border border-slate-800 space-y-2">
+              <label className="flex items-center justify-between text-xs text-slate-200 cursor-pointer">
+                <div>
+                  <div className="font-semibold text-white">Posture &amp; Ergonomics Reminder</div>
+                  <div className="text-[11px] text-slate-400">
+                    Gentle reminder to straighten back, adjust posture, and roll shoulders
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={profile.notifyPosture !== false}
+                  onChange={(e) =>
+                    onUpdateProfile({ notifyPosture: e.target.checked })
+                  }
+                  className="accent-indigo-500"
+                />
+              </label>
+
+              {profile.notifyPosture !== false && (
+                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                  <span className="text-slate-400 text-[11px]">Interval</span>
+                  <select
+                    value={profile.postureIntervalMinutes ?? 45}
+                    onChange={(e) =>
+                      onUpdateProfile({
+                        postureIntervalMinutes: Number(e.target.value),
+                      })
+                    }
+                    className="px-2.5 py-1 rounded-lg bg-slate-950 border border-slate-700 text-xs text-slate-200 cursor-pointer"
+                  >
+                    <option value={20}>Every 20 minutes</option>
+                    <option value={30}>Every 30 minutes</option>
+                    <option value={45}>Every 45 minutes (Recommended)</option>
+                    <option value={60}>Every 1 hour</option>
+                    <option value={90}>Every 90 minutes</option>
+                  </select>
+                </div>
+              )}
+            </div>
+
+            {/* Quiet Hours Policy */}
+            <div className="p-3 rounded-xl bg-slate-900/75 border border-slate-800 space-y-2">
+              <label className="flex items-center justify-between text-xs text-slate-200 cursor-pointer">
+                <div>
+                  <div className="font-semibold text-white">Quiet Hours (Mute Distractions)</div>
+                  <div className="text-[11px] text-slate-400">
+                    Automatically silence desktop notifications and audio during rest hours
+                  </div>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={Boolean(profile.quietHoursEnabled)}
+                  onChange={(e) =>
+                    onUpdateProfile({ quietHoursEnabled: e.target.checked })
+                  }
+                  className="accent-indigo-500"
+                />
+              </label>
+
+              {profile.quietHoursEnabled && (
+                <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between gap-2 text-xs">
+                  <span className="text-slate-400 text-[11px]">Hours</span>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="time"
+                      value={profile.quietHoursStart || '23:00'}
+                      onChange={(e) =>
+                        onUpdateProfile({ quietHoursStart: e.target.value })
+                      }
+                      className="px-2 py-1 rounded bg-slate-950 border border-slate-700 text-xs text-slate-200 font-mono-tabular"
+                    />
+                    <span className="text-slate-400 text-[11px]">to</span>
+                    <input
+                      type="time"
+                      value={profile.quietHoursEnd || '07:00'}
+                      onChange={(e) =>
+                        onUpdateProfile({ quietHoursEnd: e.target.value })
+                      }
+                      className="px-2 py-1 rounded bg-slate-950 border border-slate-700 text-xs text-slate-200 font-mono-tabular"
+                    />
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -2189,6 +2357,214 @@ export const SettingsAndBackupView: React.FC<SettingsAndBackupViewProps> = ({
                 <Lock className="w-3.5 h-3.5" />
                 <span>Lock Workspace Now</span>
               </button>
+            )}
+          </div>
+        </div>
+
+        {/* Personalization, Themes & Interface Customization Card */}
+        <div
+          className="rounded-2xl border border-slate-800/90 p-5 shadow-xl space-y-4"
+          style={panelBgStyle}
+        >
+          <div>
+            <h3 className="text-sm font-semibold text-white flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-indigo-400" />
+              <span>Personalization &amp; Workspace Modes</span>
+            </h3>
+            <p className="text-xs text-slate-400 mt-0.5">
+              Customize accent palette, layout spacing, animation speed, default launch mode, and currency preferences.
+            </p>
+          </div>
+
+          <div className="space-y-4 text-xs">
+            {/* 1. Accent Theme Palette */}
+            <div>
+              <label className="block text-slate-300 font-medium mb-1.5">
+                Accent Theme Color
+              </label>
+              <div className="flex items-center gap-2 flex-wrap">
+                {[
+                  { name: 'Indigo', hex: '#6366f1' },
+                  { name: 'Emerald', hex: '#10b981' },
+                  { name: 'Rose', hex: '#f43f5e' },
+                  { name: 'Amber', hex: '#f59e0b' },
+                  { name: 'Cyan', hex: '#06b6d4' },
+                  { name: 'Violet', hex: '#8b5cf6' },
+                  { name: 'Obsidian', hex: '#64748b' },
+                ].map((color) => {
+                  const isSelected = styleSettings.accentColor === color.hex;
+                  return (
+                    <button
+                      key={color.hex}
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        onUpdateStyle?.({ accentColor: color.hex });
+                      }}
+                      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-xl border cursor-pointer transition-all ${
+                        isSelected
+                          ? 'border-white bg-slate-800 text-white shadow'
+                          : 'border-slate-800 bg-slate-900/60 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      <span
+                        className="w-3.5 h-3.5 rounded-full shrink-0"
+                        style={{ backgroundColor: color.hex }}
+                      />
+                      <span>{color.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 2. Layout Spacing & Spacing */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-slate-300 font-medium mb-1.5">
+                  Layout Density
+                </label>
+                <div className="flex items-center gap-1">
+                  {(['compact', 'comfortable', 'spacious'] as const).map((sp) => (
+                    <button
+                      key={sp}
+                      type="button"
+                      onClick={() => {
+                        soundEngine.playUiClick();
+                        onUpdateProfile({ layoutSpacing: sp });
+                      }}
+                      className={`flex-1 py-1.5 rounded-xl text-center capitalize cursor-pointer transition-colors ${
+                        (profile.layoutSpacing || 'comfortable') === sp
+                          ? 'bg-indigo-600 text-white font-semibold'
+                          : 'bg-slate-900 border border-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {sp}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-medium mb-1.5">
+                  Default Launch Workspace Mode
+                </label>
+                <select
+                  value={profile.defaultWorkspaceMode || 'daily_life'}
+                  onChange={(e) => {
+                    soundEngine.playUiClick();
+                    onUpdateProfile({
+                      defaultWorkspaceMode: e.target.value as WorkspaceMode,
+                      workspaceMode: e.target.value as WorkspaceMode,
+                    });
+                  }}
+                  className="w-full px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-white cursor-pointer"
+                >
+                  <option value="daily_life">Daily Life (Dashboard)</option>
+                  <option value="focus">Focus (Timer)</option>
+                  <option value="planning">Planning (Calendar)</option>
+                  <option value="finance">Finance (FINSA)</option>
+                  <option value="relax">Relax (Sanctuary)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* 3. Currency & Date Format */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-slate-300 font-medium mb-1.5">
+                  Primary Currency
+                </label>
+                <select
+                  value={finsaCurrency}
+                  onChange={(e) => {
+                    soundEngine.playUiClick();
+                    onUpdateCurrency?.(e.target.value as FinsaCurrency);
+                  }}
+                  className="w-full px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-white cursor-pointer"
+                >
+                  <option value="INR">INR (₹) Indian Rupee</option>
+                  <option value="USD">USD ($) US Dollar</option>
+                  <option value="EUR">EUR (€) Euro</option>
+                  <option value="GBP">GBP (£) British Pound</option>
+                  <option value="CAD">CAD (CA$) Canadian Dollar</option>
+                  <option value="AUD">AUD (AU$) Australian Dollar</option>
+                  <option value="JPY">JPY (¥) Japanese Yen</option>
+                  <option value="CHF">CHF Swiss Franc</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-slate-300 font-medium mb-1.5">
+                  Date Format
+                </label>
+                <select
+                  value={profile.dateFormat || 'YYYY-MM-DD'}
+                  onChange={(e) => {
+                    soundEngine.playUiClick();
+                    onUpdateProfile({
+                      dateFormat: e.target.value as 'YYYY-MM-DD' | 'DD/MM/YYYY' | 'MM/DD/YYYY',
+                    });
+                  }}
+                  className="w-full px-3 py-1.5 rounded-xl bg-slate-900 border border-slate-700 text-white cursor-pointer"
+                >
+                  <option value="YYYY-MM-DD">YYYY-MM-DD (ISO 8601)</option>
+                  <option value="DD/MM/YYYY">DD/MM/YYYY (UK / India)</option>
+                  <option value="MM/DD/YYYY">MM/DD/YYYY (US)</option>
+                </select>
+              </div>
+            </div>
+
+            {/* 4. Animation Speed & Reduced Motion */}
+            <div className="p-3 rounded-xl bg-slate-900/75 border border-slate-800 flex items-center justify-between">
+              <div>
+                <div className="font-semibold text-white">Reduced Motion &amp; Accessibility</div>
+                <div className="text-[11px] text-slate-400">
+                  Minimize spatial transitions and rolling counters for motion sensitivity
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={Boolean(styleSettings.reducedMotion)}
+                onChange={(e) => {
+                  soundEngine.playUiClick();
+                  onUpdateStyle?.({ reducedMotion: e.target.checked });
+                }}
+                className="accent-indigo-500 w-4 h-4 cursor-pointer"
+              />
+            </div>
+
+            {/* 5. Safe Restore Interface Defaults Button */}
+            <div className="pt-2 border-t border-slate-800/80 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div>
+                <div className="font-semibold text-slate-200">
+                  Restore Interface Defaults
+                </div>
+                <div className="text-[11px] text-slate-500">
+                  Resets colors, layout density, and animations without deleting any habits, transactions, or personal data.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  soundEngine.playSaveSuccess();
+                  onRestoreInterfaceDefaults?.();
+                  setInterfaceResetNotice(
+                    '✓ Interface defaults restored. Your personal habits, transactions, and data remain 100% intact.'
+                  );
+                  setTimeout(() => setInterfaceResetNotice(null), 5000);
+                }}
+                className="px-3.5 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-xs font-semibold text-indigo-300 flex items-center gap-1.5 cursor-pointer whitespace-nowrap transition-colors"
+              >
+                <RotateCcw className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Reset Interface Defaults</span>
+              </button>
+            </div>
+
+            {interfaceResetNotice && (
+              <div className="p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-[11px] animate-fadeIn">
+                {interfaceResetNotice}
+              </div>
             )}
           </div>
         </div>

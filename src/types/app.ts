@@ -1,3 +1,5 @@
+import { FinsaState } from './finsa';
+
 export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 export type NavigationTab =
@@ -8,10 +10,16 @@ export type NavigationTab =
   | 'goals'
   | 'timer'
   | 'music'
+  | 'streaming'
+  | 'apps'
+  | 'finsa'
   | 'reminders'
   | 'statistics'
+  | 'insights'
+  | 'timeline'
   | 'myspace'
   | 'settings';
+
 
 export type HabitFrequency = 'daily' | 'weekdays' | 'weekends' | 'custom' | 'interval';
 
@@ -278,7 +286,7 @@ export type MusicCategoryId =
 
 export type RepeatMode = 'off' | 'all' | 'one';
 
-export type MusicActiveSource = 'ambient' | 'library' | 'youtube' | 'spotify';
+export type MusicActiveSource = 'ambient' | 'library' | 'youtube' | 'spotify' | 'video' | 'none';
 
 export type AmbientMoodId =
   | 'peaceful_exploration'
@@ -309,7 +317,11 @@ export interface SpotifySavedItem {
 export interface CustomAudioTrack {
   id: string;
   name: string;
-  dataUrl: string;
+  dataUrl?: string;
+  filePath?: string;
+  blobKey?: string;
+  fileSize?: number;
+  format?: string;
   mediaType?: 'audio' | 'video';
   category?: 'ambient' | 'focus' | 'nature' | 'rain' | 'instrumental' | 'custom';
   artist?: string;
@@ -338,14 +350,18 @@ export interface RecentTrackEntry {
 export interface AudioSettings {
   currentTrackId: string;
   isPlaying: boolean;
+  playbackStatus?: 'stopped' | 'loading' | 'playing' | 'paused' | 'error';
   ambientPlaying?: boolean;
   musicVolume: number; // 0 - 100
   ambientSoundId: AmbientSoundId;
   ambientVolume: number; // 0 - 100
   notificationVolume: number; // 0 - 100
   uiSoundVolume: number; // 0 - 100
+  uiSoundEnabled?: boolean;
   isMuted: boolean;
   customTracks: CustomAudioTrack[];
+  videoTracks?: CustomAudioTrack[];
+  musicPreference?: 'local' | 'online' | 'later';
   audioPresets?: AudioPreset[];
   shuffle?: boolean;
   repeatMode?: RepeatMode;
@@ -432,6 +448,16 @@ export interface SecuritySettings {
 
 export type MissedReminderBehavior = 'summary' | 'notify_immediately' | 'ignore';
 
+export type WorkspaceMode = 'daily_life' | 'focus' | 'planning' | 'finance' | 'relax';
+
+export interface DailyBriefSections {
+  habits: boolean;
+  calendar: boolean;
+  focus: boolean;
+  finance: boolean;
+  music: boolean;
+}
+
 export interface UserProfile {
   appName: string;
   userName: string;
@@ -461,6 +487,13 @@ export interface UserProfile {
   lowPowerBackgroundMode?: boolean;
   // XP & Gamification
   xpEnabled?: boolean;
+  // Posture & Stretch reminders
+  notifyPosture?: boolean;
+  postureIntervalMinutes?: number;
+  lastPostureReminderAt?: number;
+  // UI Sound settings
+  uiSoundEnabled?: boolean;
+  uiSoundVolume?: number;
   // Hydration
   waterIntervalMinutes: number;
   waterCompletedToday: number;
@@ -472,6 +505,71 @@ export interface UserProfile {
   currentActiveDateStr?: string;
   lastSavedAt?: string;
   lastBackupAt?: string | null;
+  // Adaptive Workspace & Personal Intelligence
+  workspaceMode?: WorkspaceMode;
+  defaultWorkspaceMode?: WorkspaceMode;
+  dailyBriefDismissedDate?: string;
+  dailyBriefSections?: DailyBriefSections;
+  layoutSpacing?: 'compact' | 'comfortable' | 'spacious';
+  mediaBarPosition?: 'bottom_fixed' | 'floating_dock' | 'hidden';
+  dateFormat?: 'YYYY-MM-DD' | 'DD/MM/YYYY' | 'MM/DD/YYYY';
+}
+
+export type CalendarEventCategory =
+  | 'work'
+  | 'personal'
+  | 'health'
+  | 'study'
+  | 'birthday'
+  | 'anniversary'
+  | 'important'
+  | 'other';
+
+export type CalendarEventRecurrence = 'none' | 'daily' | 'weekly' | 'monthly' | 'yearly';
+
+export interface CalendarEvent {
+  id: string;
+  title: string;
+  description?: string;
+  date: string; // YYYY-MM-DD
+  endDate?: string; // YYYY-MM-DD
+  startTime?: string; // HH:mm
+  endTime?: string; // HH:mm
+  allDay: boolean;
+  location?: string;
+  category: CalendarEventCategory;
+  color: string;
+  reminderMinutesBefore?: number; // e.g. 0 (at event), 5, 10, 15, 30, 60
+  recurrence: CalendarEventRecurrence;
+  isImportant?: boolean;
+  createdAt: string;
+  lastRemindedTimestamp?: number;
+}
+
+export interface CustomAppShortcut {
+  id: string;
+  name: string;
+  icon: string; // emoji or icon name
+  url: string; // http(s):// or custom protocol
+  category?: 'media' | 'tools' | 'productivity' | 'custom';
+  description?: string;
+  isDefault?: boolean;
+}
+
+export type DesktopWidgetSection = 'tasks' | 'timer' | 'savings' | 'music' | 'calendar';
+
+export interface DesktopWidgetSettings {
+  showTasks: boolean;
+  showMusic: boolean;
+  showUpcomingEvents: boolean;
+  showFocusTimer?: boolean;
+  showDailySavings?: boolean;
+  widgetOrder?: DesktopWidgetSection[];
+  widgetSize?: 'compact' | 'standard' | 'expanded';
+  activeWidgetTab?: DesktopWidgetSection;
+  alwaysOnTop: boolean;
+  opacity: number;
+  compactMode: boolean;
 }
 
 export interface QuickNoteItem {
@@ -508,4 +606,8 @@ export interface AppDataState {
   dailyUpdates?: DailyPhotoUpdate[];
   versionedBackups?: VersionedBackupEntry[];
   quickNote?: QuickNoteData;
+  calendarEvents?: CalendarEvent[];
+  customAppShortcuts?: CustomAppShortcut[];
+  widgetSettings?: DesktopWidgetSettings;
+  finsa?: FinsaState;
 }

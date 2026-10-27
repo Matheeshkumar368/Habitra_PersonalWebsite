@@ -71,7 +71,6 @@ const PixelEnvironmentCanvasComponent: React.FC<PixelEnvironmentCanvasProps> = (
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const [imgFailed, setImgFailed] = useState(false);
   const [draggingId, setDraggingId] = useState<RoomObjectId | null>(null);
-  const [hoveredHotspotId, setHoveredHotspotId] = useState<string | null>(null);
 
   const scene =
     PIXEL_SCENES.find((s) => s.id === environment.sceneId) || PIXEL_SCENES[0];
@@ -433,118 +432,7 @@ const PixelEnvironmentCanvasComponent: React.FC<PixelEnvironmentCanvasProps> = (
     unlockedObjectIds.length > 0 &&
     interactiveBuilder;
 
-  const showInteractiveHotspots =
-    !compactBanner &&
-    !interactiveBuilder &&
-    environment.showWorldHotspots !== false &&
-    Boolean(hotspotContext);
 
-  // Define interactive hotspots positioned naturally over the fantasy workspace objects
-  const worldHotspots = hotspotContext
-    ? [
-        {
-          id: 'hotspot_focus_monitor',
-          x: 50,
-          y: 66,
-          icon: '🖥️',
-          label: 'Focus Terminal',
-          stateText: isFocusTimerRunning
-            ? `Focusing · ${hotspotContext.timerFormatted}`
-            : `Ready · ${hotspotContext.timerFormatted}`,
-          actionLabel: isFocusTimerRunning ? 'Open Focus Studio' : 'Start Focus Session',
-          accent: '#2dd4bf',
-          onClick: () => hotspotContext.onNavigateTab('timer'),
-          onQuickAction: hotspotContext.onToggleFocusTimer,
-          quickActionText: isFocusTimerRunning ? 'Pause Timer' : 'Start Timer',
-        },
-        {
-          id: 'hotspot_gramophone',
-          x: 62.5,
-          y: 64,
-          icon: isMusicPlaying ? '🎶' : '🎺',
-          label: 'Sanctuary Gramophone',
-          stateText: isMusicPlaying
-            ? `Playing · ${hotspotContext.currentTrackTitle}`
-            : `Paused · ${hotspotContext.currentTrackTitle}`,
-          actionLabel: 'Open Music Library',
-          accent: '#f59e0b',
-          onClick: () => hotspotContext.onNavigateTab('music'),
-          onQuickAction: hotspotContext.onToggleMusicPlay,
-          quickActionText: isMusicPlaying ? 'Pause Music' : 'Play Music',
-        },
-        {
-          id: 'hotspot_grimoire',
-          x: 49,
-          y: 81,
-          icon: '📖',
-          label: 'Ritual Grimoire & Journal',
-          stateText: `${hotspotContext.completedToday}/${hotspotContext.totalHabits} Habits Today`,
-          actionLabel: 'Open Daily Journal',
-          accent: '#fb923c',
-          onClick: hotspotContext.onOpenJournal,
-          onQuickAction: () => hotspotContext.onNavigateTab('habits'),
-          quickActionText: 'Manage Habits',
-        },
-        {
-          id: 'hotspot_living_flora',
-          x: 37,
-          y: 65,
-          icon: '🌿',
-          label: 'Bioluminescent Flora',
-          stateText: `${hotspotContext.worldStageName} · ${hotspotContext.currentStreak}d Streak`,
-          actionLabel: 'Inspect Living Garden',
-          accent: '#10b981',
-          onClick: () => {
-            if (hotspotContext.onScrollToSection) {
-              hotspotContext.onScrollToSection('living-habit-garden');
-            } else {
-              hotspotContext.onNavigateTab('myspace');
-            }
-          },
-        },
-        {
-          id: 'hotspot_river_portal',
-          x: 71,
-          y: 46,
-          icon: '🌊',
-          label: 'Realm River Portal',
-          stateText: `${scene.name} · ${environment.weather.replace('_', ' ')}`,
-          actionLabel: 'Travel to Next Realm',
-          accent: '#38bdf8',
-          onClick: hotspotContext.onCycleScenePortal,
-          onQuickAction: () => {
-            if (hotspotContext.onScrollToSection) {
-              hotspotContext.onScrollToSection('living-realm-portals');
-            } else {
-              hotspotContext.onNavigateTab('myspace');
-            }
-          },
-          quickActionText: 'All Realm Portals',
-        },
-        {
-          id: 'hotspot_lanterns',
-          x: 42.5,
-          y: 13,
-          icon: '🏮',
-          label: 'Sanctuary Lanterns',
-          stateText: `Time: ${effectiveTime} · Warmth ${environment.lightingWarmth}%`,
-          actionLabel: 'Cycle Time of Day',
-          accent: '#fbbf24',
-          onClick: hotspotContext.onCycleTimeOfDay,
-        },
-        {
-          id: 'hotspot_astral_spire',
-          x: 31.5,
-          y: 28,
-          icon: '🏰',
-          label: 'Citadel of Goals',
-          stateText: `${hotspotContext.activeGoalsCount} Active Milestones`,
-          actionLabel: 'Open Goals & Quests',
-          accent: '#a855f7',
-          onClick: () => hotspotContext.onNavigateTab('goals'),
-        },
-      ]
-    : [];
 
   return (
     <div
@@ -605,84 +493,7 @@ const PixelEnvironmentCanvasComponent: React.FC<PixelEnvironmentCanvasProps> = (
         className="absolute inset-0 w-full h-full pointer-events-none"
       />
 
-      {/* Interactive Diegetic World Hotspots */}
-      {showInteractiveHotspots && (
-        <div className="absolute inset-0 z-20 pointer-events-none hidden sm:block">
-          {worldHotspots.map((spot) => {
-            const isHovered = hoveredHotspotId === spot.id;
-            return (
-              <div
-                key={spot.id}
-                style={{
-                  left: `${spot.x}%`,
-                  top: `${spot.y}%`,
-                  transform: 'translate(-50%, -50%)',
-                }}
-                onMouseEnter={() => setHoveredHotspotId(spot.id)}
-                onMouseLeave={() =>
-                  setHoveredHotspotId((prev) => (prev === spot.id ? null : prev))
-                }
-                className="absolute pointer-events-auto"
-              >
-                {/* Hotspot Interactive Node */}
-                <button
-                  type="button"
-                  onClick={spot.onClick}
-                  aria-label={`${spot.label}: ${spot.actionLabel}`}
-                  className="group relative flex items-center gap-1.5 px-2.5 py-1 rounded-xl bg-slate-950/80 hover:bg-slate-900/95 border border-white/20 hover:border-teal-400/70 shadow-lg backdrop-blur-md transition-all duration-150 hover:scale-105 cursor-pointer"
-                >
-                  <span className="text-xs leading-none">{spot.icon}</span>
-                  <span className="text-[11px] font-medium text-slate-100 whitespace-nowrap">
-                    {spot.id === 'hotspot_focus_monitor'
-                      ? hotspotContext?.timerFormatted
-                      : spot.label.split(' ')[1] || spot.label}
-                  </span>
-                </button>
 
-                {/* Rich Diegetic Inspection Popover on Hover */}
-                {isHovered && (
-                  <div
-                    className={`absolute left-1/2 -translate-x-1/2 ${
-                      spot.y > 60 ? 'bottom-full mb-2' : 'top-full mt-2'
-                    } w-56 p-3 rounded-xl bg-slate-950/95 border border-slate-700/90 shadow-2xl backdrop-blur-xl text-left z-30`}
-                  >
-                    <div className="flex items-center justify-between gap-2 mb-1">
-                      <span className="text-xs font-semibold text-white truncate">
-                        {spot.label}
-                      </span>
-                      <span className="text-xs">{spot.icon}</span>
-                    </div>
-                    <p className="text-[11px] text-slate-300 font-mono-tabular mb-2.5 truncate">
-                      {spot.stateText}
-                    </p>
-                    <div className="flex items-center gap-1.5">
-                      <button
-                        type="button"
-                        onClick={spot.onClick}
-                        className="flex-1 px-2.5 py-1.5 rounded-lg bg-teal-500/20 hover:bg-teal-500/35 border border-teal-400/40 text-teal-200 text-[11px] font-semibold text-center transition-colors cursor-pointer whitespace-nowrap"
-                      >
-                        {spot.actionLabel}
-                      </button>
-                      {spot.onQuickAction && spot.quickActionText && (
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            spot.onQuickAction?.();
-                          }}
-                          className="px-2.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-200 text-[11px] font-medium transition-colors cursor-pointer whitespace-nowrap"
-                        >
-                          {spot.quickActionText}
-                        </button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      )}
 
       {/* Progress Garden & Room Builder Objects (When in Builder or Custom Object Mode) */}
       {showGardenObjects && roomLayout && (

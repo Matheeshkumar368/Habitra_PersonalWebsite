@@ -2160,7 +2160,7 @@ export const WelcomeWizardModal: React.FC<WelcomeWizardModalProps> = ({
                             background: `linear-gradient(135deg, ${sc.skyGradient[0]}, ${sc.skyGradient[1]})`,
                           }}
                         />
-                      )}
+                      
                       <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/50 to-transparent" />
                       <div className="relative z-10">
                         <div className="text-xs font-bold text-white truncate">

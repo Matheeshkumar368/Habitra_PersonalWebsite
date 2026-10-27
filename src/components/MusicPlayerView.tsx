@@ -1,35 +1,58 @@
-import React, { useMemo, useRef, useState } from 'react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Play,
   Pause,
   Square,
   Volume2,
   VolumeX,
-  Star,
   Upload,
   FolderOpen,
   Search,
-  ListMusic,
   ExternalLink,
   Youtube,
   Radio,
   Trash2,
-  Plus,
+  Music,
+  Film,
+  Check,
+  AlertCircle,
+  SkipForward,
+  SkipBack,
+  Maximize2,
+  Minimize2,
+  Tv,
   Clock,
   Sparkles,
-  Info,
-  Film,
-  Music,
-  Check,
+  ArrowUpDown,
+  FileQuestion,
 } from 'lucide-react';
 import {
   AudioSettings,
   CustomAudioTrack,
-  MusicActiveSource,
   SpotifySavedItem,
   StyleSettings,
   YouTubeSavedItem,
 } from '../types/app';
+import { playbackCoordinator } from '../audio/playbackCoordinator';
+import { PlaybackProgressState, soundEngine } from '../audio/soundEngine';
+import { VideoProgressState, videoEngine } from '../audio/videoEngine';
+import { saveAudioBlob } from '../db/indexedDb';
+import { AudioReactiveVisualizer } from './AudioReactiveVisualizer';
+
+const openExternalUrl = (rawUrl: string) => {
+  if (typeof window !== 'undefined') {
+    const desktop = (
+      window as unknown as {
+        habitraDesktop?: { openExternal?: (u: string) => Promise<boolean> };
+      }
+    ).habitraDesktop;
+    if (desktop?.openExternal) {
+      desktop.openExternal(rawUrl);
+      return;
+    }
+    window.open(rawUrl, '_blank', 'noopener,noreferrer');
+  }
+};
 
 interface MusicPlayerViewProps {
   audio: AudioSettings;
@@ -40,6 +63,7 @@ interface MusicPlayerViewProps {
   onNextTrack: () => void;
   onPrevTrack: () => void;
   onUploadLocalTracks: (tracks: CustomAudioTrack[]) => void;
+  initialTab?: 'local' | 'online' | 'video';
 }
 
 export const MusicPlayerView: React.FC<MusicPlayerViewProps> = ({
@@ -47,13 +71,43 @@ export const MusicPlayerView: React.FC<MusicPlayerViewProps> = ({
   styleSettings,
   panelBgStyle,
   onUpdateAudio,
+  onSelectTrack,
+  onNextTrack,
+  onPrevTrack,
   onUploadLocalTracks,
+  initialTab,
 }) => {
-  const [activeTab, setActiveTab] = useState<'youtube' | 'spotify' | 'library' | 'saved'>(
-    audio.activeSource === 'spotify' ? 'spotify' : 'youtube'
+  // Determine starting tab based on activeSource or initialTab prop
+  const [activeMediaSection, setActiveMediaSection] = useState<'local' | 'online' | 'video'>(
+    initialTab || (audio.activeSource === 'video' ? 'video' : audio.activeSource === 'youtube' || audio.activeSource === 'spotify' ? 'online' : 'local')
   );
 
-  // Form states
+  useEffect(() => {
+    if (initialTab) {
+      setActiveMediaSection(initialTab);
+    }
+  }, [initialTab]);
+
+  // Audio engine progress tracking for local playback
+  const [localProgress, setLocalProgress] = useState<PlaybackProgressState>({
+    currentTime: 0,
+    duration: 0,
+    isSeekable: false,
+    playbackError: null,
+    sourceType: 'none',
+  });
+
+  useEffect(() => {
+    const unsub = soundEngine.subscribeProgress((st) => {
+      setLocalProgress(st);
+    });
+    return unsub;
+  }, []);
+
+  // Form states for Online tab
+  const [onlineSubTab, setOnlineSubTab] = useState<'youtube' | 'spotify'>(
+    audio.activeSource === 'spotify' ? 'spotify' : 'youtube'
+  );
   const [youtubeInputUrl, setYoutubeInputUrl] = useState('');
   const [youtubeInputTitle, setYoutubeInputTitle] = useState('');
   const [youtubeError, setYoutubeError] = useState<string | null>(null);
@@ -64,12 +118,119 @@ export const MusicPlayerView: React.FC<MusicPlayerViewProps> = ({
 
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
+  const [sortBy, setSortBy] = useState<'title' | 'date'>('date');
   const [uploadingMedia, setUploadingMedia] = useState(false);
 
-  const fileInputRef = useRef<HTMLInputElement | null>(null);
-  const folderInputRef = useRef<HTMLInputElement | null>(null);
+  // Local tracks vs Video tracks separation
+  const localAudioTracks = useMemo(() => {
+    return (audio.customTracks || []).filter((t) => t.mediaType !== 'video');
+  }, [audio.customTracks]);
 
-  // YouTube URL parsing & submission
+  const localVideoTracks = useMemo(() => {
+    const fromAudioTracks = (audio.customTracks || []).filter((t) => t.mediaType === 'video');
+    const fromExplicitVideo = audio.videoTracks || [];
+    const map = new Map<string, CustomAudioTrack>();
+    [...fromAudioTracks, ...fromExplicitVideo].forEach((t) => map.set(t.id, t));
+    return Array.from(map.values());
+  }, [audio.customTracks, audio.videoTracks]);
+
+  // Active track determination
+  const isLocalAudioActive = audio.activeSource === 'library' && Boolean(audio.isPlaying);
+  const isYouTubeActive = audio.activeSource === 'youtube' && Boolean(audio.activeYouTubeId);
+  const isSpotifyActive = audio.activeSource === 'spotify' && Boolean(audio.activeSpotifyUri);
+  const isVideoActive = audio.activeSource === 'video' && Boolean(audio.activeVideoTrackId);
+
+  const currentLocalTrack = localAudioTracks.find((t) => t.id === audio.currentTrackId);
+  const currentVideoTrack = localVideoTracks.find((t) => t.id === audio.activeVideoTrackId);
+
+  // Video player state & mounting
+  const videoMountRef = useRef<HTMLDivElement | null>(null);
+  const videoContainerRef = useRef<HTMLDivElement | null>(null);
+  const [videoProgress, setVideoProgress] = useState<VideoProgressState>(videoEngine.getState());
+  const [isVideoFullscreen, setIsVideoFullscreen] = useState(false);
+  const [showFullscreenOverlay, setShowFullscreenOverlay] = useState(true);
+  const hideOverlayTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    const unsub = videoEngine.subscribe((st) => {
+      setVideoProgress(st);
+    });
+    return unsub;
+  }, []);
+
+  useEffect(() => {
+    if (activeMediaSection === 'video') {
+      if (videoMountRef.current) {
+        videoEngine.attachToContainer(videoMountRef.current);
+      }
+      if (currentVideoTrack && videoProgress.activeTrackId !== currentVideoTrack.id) {
+        videoEngine.loadTrack(currentVideoTrack, false);
+      }
+    }
+  }, [activeMediaSection, currentVideoTrack, videoProgress.activeTrackId]);
+
+  // File picker references
+  const audioFileInputRef = useRef<HTMLInputElement | null>(null);
+  const audioFolderInputRef = useRef<HTMLInputElement | null>(null);
+  const videoFileInputRef = useRef<HTMLInputElement | null>(null);
+
+  // Synchronize fullscreen state across standard Fullscreen API and desktop fallbacks
+  useEffect(() => {
+    const handleFsChange = () => {
+      const isFs = Boolean(document.fullscreenElement);
+      setIsVideoFullscreen(isFs);
+    };
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape' && isVideoFullscreen) {
+        if (document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        }
+        setIsVideoFullscreen(false);
+      }
+    };
+    document.addEventListener('fullscreenchange', handleFsChange);
+    window.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFsChange);
+      window.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [isVideoFullscreen]);
+
+
+  // --------------------------------------------------------------------------
+  // ACTIONS: LOCAL AUDIO PLAYBACK
+  // --------------------------------------------------------------------------
+  const handlePlayLocalTrack = (trackId: string) => {
+    soundEngine.playUiClick();
+    videoEngine.pause();
+    const patch = playbackCoordinator.preparePlayLocalTrack(trackId, audio);
+    if (patch) {
+      onUpdateAudio(patch);
+      onSelectTrack(trackId);
+    }
+  };
+
+  const handlePauseLocalTrack = () => {
+    soundEngine.playUiClick();
+    const patch = playbackCoordinator.preparePause(audio);
+    onUpdateAudio(patch);
+  };
+
+  const handleResumeLocalTrack = () => {
+    soundEngine.playUiClick();
+    const patch = playbackCoordinator.prepareResume(audio);
+    onUpdateAudio(patch);
+  };
+
+  const handleStopLocalTrack = () => {
+    soundEngine.playUiClick();
+    const patch = playbackCoordinator.prepareStopAll();
+    onUpdateAudio(patch);
+  };
+
+  // --------------------------------------------------------------------------
+  // ACTIONS: ONLINE STREAM PLAYBACK (YOUTUBE / SPOTIFY)
+  // --------------------------------------------------------------------------
   const handleAddYouTubeUrl = (e: React.FormEvent) => {
     e.preventDefault();
     setYoutubeError(null);
@@ -79,9 +240,7 @@ export const MusicPlayerView: React.FC<MusicPlayerViewProps> = ({
     let embedId = '';
     let isPlaylist = false;
 
-    // Detect Playlist: list=...
     const playlistMatch = raw.match(/[?&]list=([a-zA-Z0-9_-]+)/);
-    // Detect Video: v=... or youtu.be/... or embed/... or shorts/...
     const videoMatch = raw.match(
       /(?:youtube\.com\/(?:watch\?.*v=|embed\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/
     );
@@ -110,21 +269,29 @@ export const MusicPlayerView: React.FC<MusicPlayerViewProps> = ({
     };
 
     const currentYt = audio.youtubeItems || [];
+    videoEngine.pause();
+    const patch = playbackCoordinator.preparePlayYouTube(embedId, newItem);
+
     onUpdateAudio({
+      ...patch,
       youtubeItems: [newItem, ...currentYt],
-      activeYouTubeId: embedId,
-      activeSpotifyUri: null,
-      activeSource: 'youtube',
-      isPlaying: true,
     });
 
     setYoutubeInputUrl('');
     setYoutubeInputTitle('');
-    setStatusMessage(`✓ Loaded and started YouTube ${isPlaylist ? 'playlist' : 'stream'}.`);
+    setStatusMessage(`✓ Loaded YouTube ${isPlaylist ? 'playlist' : 'stream'}.`);
     window.setTimeout(() => setStatusMessage(null), 3000);
   };
 
-  // Spotify Link parsing & submission
+  const handlePlaySavedYouTube = (item: YouTubeSavedItem) => {
+    soundEngine.playUiClick();
+    videoEngine.pause();
+    const patch = playbackCoordinator.preparePlayYouTube(item.embedId, item);
+    if (patch) {
+      onUpdateAudio(patch);
+    }
+  };
+
   const handleAddSpotifyUrl = (e: React.FormEvent) => {
     e.preventDefault();
     setSpotifyError(null);
@@ -160,62 +327,315 @@ export const MusicPlayerView: React.FC<MusicPlayerViewProps> = ({
     };
 
     const currentSp = audio.spotifyItems || [];
+    videoEngine.pause();
+    const patch = playbackCoordinator.preparePlaySpotify(embedUri, newItem);
+
     onUpdateAudio({
+      ...patch,
       spotifyItems: [newItem, ...currentSp],
-      activeSpotifyUri: embedUri,
-      activeYouTubeId: null,
-      activeSource: 'spotify',
-      isPlaying: true,
     });
 
     setSpotifyInputUrl('');
     setSpotifyInputTitle('');
-    setStatusMessage('✓ Loaded and mounted Spotify embed.');
+    setStatusMessage('✓ Loaded Spotify embed.');
     window.setTimeout(() => setStatusMessage(null), 3000);
   };
 
-  // Local file upload handler
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handlePlaySavedSpotify = (item: SpotifySavedItem) => {
+    soundEngine.playUiClick();
+    videoEngine.pause();
+    const patch = playbackCoordinator.preparePlaySpotify(item.embedUri, item);
+    if (patch) {
+      onUpdateAudio(patch);
+    }
+  };
+
+  // --------------------------------------------------------------------------
+  // ACTIONS: VIDEO SONGS PLAYBACK (POWERED BY CENTRALIZED VIDEO ENGINE)
+  // --------------------------------------------------------------------------
+  const handlePlayVideoTrack = (track: CustomAudioTrack) => {
+    soundEngine.playUiClick();
+    const patch = playbackCoordinator.preparePlayVideo(track.id);
+    if (patch) {
+      onUpdateAudio(patch);
+    }
+    videoEngine.playTrack(track, true);
+  };
+
+  const handleTogglePlayPauseVideo = () => {
+    soundEngine.playUiClick();
+    if (videoProgress.playbackState === 'playing') {
+      videoEngine.pause();
+      onUpdateAudio({ isPlaying: false, playbackStatus: 'paused' });
+    } else {
+      videoEngine.play();
+      onUpdateAudio({ isPlaying: true, activeSource: 'video', playbackStatus: 'playing' });
+    }
+  };
+
+  const handleStopVideo = () => {
+    soundEngine.playUiClick();
+    videoEngine.stop();
+    onUpdateAudio({
+      activeVideoTrackId: null,
+      activeSource: 'none',
+      isPlaying: false,
+      playbackStatus: 'stopped',
+    });
+  };
+
+  const handleToggleVideoFullscreen = () => {
+    soundEngine.playUiClick();
+    if (!isVideoFullscreen) {
+      const el = videoContainerRef.current;
+      if (el) {
+        if (el.requestFullscreen) {
+          el.requestFullscreen().catch(() => {
+            setIsVideoFullscreen(true);
+          });
+        } else if ((el as any).webkitRequestFullscreen) {
+          (el as any).webkitRequestFullscreen();
+        }
+      }
+      setIsVideoFullscreen(true);
+    } else {
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(() => {});
+      }
+      setIsVideoFullscreen(false);
+    }
+  };
+
+  // --------------------------------------------------------------------------
+  // IMPORT ACTIONS (AUDIO & VIDEO)
+  // --------------------------------------------------------------------------
+  const handleOpenAudioFileDialog = async () => {
+    soundEngine.playUiClick();
+    const desktop = (
+      window as unknown as {
+        habitraDesktop?: {
+          openAudioFilesDialog?: () => Promise<
+            { filePath: string; name: string; ext: string; size: number }[]
+          >;
+        };
+      }
+    ).habitraDesktop;
+
+    if (desktop?.openAudioFilesDialog) {
+      setUploadingMedia(true);
+      try {
+        const selected = await desktop.openAudioFilesDialog();
+        if (selected && selected.length > 0) {
+          const newTracks: CustomAudioTrack[] = selected.map((s) => ({
+            id: `local_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            name: s.name,
+            filePath: s.filePath,
+            fileSize: s.size,
+            format: s.ext,
+            mediaType: 'audio',
+            category: 'custom',
+            artist: 'Local Music File',
+            folderName: 'Local Library',
+            addedAt: new Date().toISOString(),
+          }));
+          onUploadLocalTracks(newTracks);
+          setStatusMessage(`✓ Imported ${newTracks.length} local audio track(s).`);
+          window.setTimeout(() => setStatusMessage(null), 3500);
+        }
+      } catch {
+        setStatusMessage('⚠ Failed to import audio files.');
+      } finally {
+        setUploadingMedia(false);
+      }
+      return;
+    }
+
+    audioFileInputRef.current?.click();
+  };
+
+  const handleOpenAudioFolderDialog = async () => {
+    soundEngine.playUiClick();
+    const desktop = (
+      window as unknown as {
+        habitraDesktop?: {
+          openAudioFolderDialog?: () => Promise<
+            { filePath: string; name: string; ext: string; size: number; folderName?: string }[]
+          >;
+        };
+      }
+    ).habitraDesktop;
+
+    if (desktop?.openAudioFolderDialog) {
+      setUploadingMedia(true);
+      try {
+        const selected = await desktop.openAudioFolderDialog();
+        if (selected && selected.length > 0) {
+          const newTracks: CustomAudioTrack[] = selected.map((s) => ({
+            id: `local_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            name: s.name,
+            filePath: s.filePath,
+            fileSize: s.size,
+            format: s.ext,
+            mediaType: 'audio',
+            category: 'custom',
+            artist: 'Local Music File',
+            folderName: s.folderName || 'Local Folder',
+            addedAt: new Date().toISOString(),
+          }));
+          onUploadLocalTracks(newTracks);
+          setStatusMessage(`✓ Imported ${newTracks.length} audio file(s) from folder.`);
+          window.setTimeout(() => setStatusMessage(null), 3500);
+        }
+      } catch {
+        setStatusMessage('⚠ Failed to import folder.');
+      } finally {
+        setUploadingMedia(false);
+      }
+      return;
+    }
+
+    audioFolderInputRef.current?.click();
+  };
+
+  const handleOpenVideoFileDialog = async () => {
+    soundEngine.playUiClick();
+    const desktop = (
+      window as unknown as {
+        habitraDesktop?: {
+          openVideoFilesDialog?: () => Promise<
+            { filePath: string; name: string; ext: string; size: number }[]
+          >;
+        };
+      }
+    ).habitraDesktop;
+
+    if (desktop?.openVideoFilesDialog) {
+      setUploadingMedia(true);
+      try {
+        const selected = await desktop.openVideoFilesDialog();
+        if (selected && selected.length > 0) {
+          const newVideos: CustomAudioTrack[] = selected.map((s) => ({
+            id: `video_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+            name: s.name,
+            filePath: s.filePath,
+            fileSize: s.size,
+            format: s.ext,
+            mediaType: 'video',
+            category: 'custom',
+            artist: 'Local Video Song',
+            folderName: 'Video Songs',
+            addedAt: new Date().toISOString(),
+          }));
+          const currentVideos = audio.videoTracks || [];
+          onUpdateAudio({
+            videoTracks: [...newVideos, ...currentVideos],
+          });
+          setStatusMessage(`✓ Imported ${newVideos.length} video song(s).`);
+          window.setTimeout(() => setStatusMessage(null), 3500);
+        }
+      } catch {
+        setStatusMessage('⚠ Failed to import video files.');
+      } finally {
+        setUploadingMedia(false);
+      }
+      return;
+    }
+
+    videoFileInputRef.current?.click();
+  };
+
+  // Browser web file input handlers
+  const handleWebAudioUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
 
     setUploadingMedia(true);
-    const addedTracks: CustomAudioTrack[] = [];
-
-    Array.from(files).forEach((file) => {
-      const isVideo = file.type.startsWith('video/') || /\.(mp4|mov|webm)$/i.test(file.name);
-      const url = URL.createObjectURL(file);
-      const track: CustomAudioTrack = {
-        id: `local_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        name: file.name.replace(/\.[^/.]+$/, ''),
-        dataUrl: url,
-        mediaType: isVideo ? 'video' : 'audio',
-        category: 'custom',
-        artist: 'Local File',
-        folderName: file.webkitRelativePath ? file.webkitRelativePath.split('/')[0] : 'Library',
-        addedAt: new Date().toISOString(),
-      };
-      addedTracks.push(track);
-    });
-
-    onUploadLocalTracks(addedTracks);
-    setUploadingMedia(false);
-    setStatusMessage(`✓ Imported ${addedTracks.length} local file(s).`);
-    window.setTimeout(() => setStatusMessage(null), 3000);
+    const added: CustomAudioTrack[] = [];
+    try {
+      for (const file of Array.from(files)) {
+        const trackId = `local_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        await saveAudioBlob(trackId, file);
+        added.push({
+          id: trackId,
+          name: file.name.replace(/\.[^/.]+$/, ''),
+          blobKey: trackId,
+          fileSize: file.size,
+          format: file.name.split('.').pop()?.toLowerCase(),
+          mediaType: 'audio',
+          category: 'custom',
+          artist: 'Local File',
+          addedAt: new Date().toISOString(),
+        });
+      }
+      onUploadLocalTracks(added);
+      setStatusMessage(`✓ Imported ${added.length} audio file(s).`);
+    } catch {
+      setStatusMessage('⚠ Could not save files.');
+    } finally {
+      setUploadingMedia(false);
+      e.target.value = '';
+    }
   };
 
-  const isYouTubeActive = audio.activeSource === 'youtube' && Boolean(audio.activeYouTubeId);
-  const isSpotifyActive = audio.activeSource === 'spotify' && Boolean(audio.activeSpotifyUri);
+  const handleWebVideoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
 
-  const activeStreamTitle = isYouTubeActive
-    ? audio.youtubeItems?.find((y) => y.embedId === audio.activeYouTubeId)?.title || 'YouTube Stream'
-    : isSpotifyActive
-    ? audio.spotifyItems?.find((s) => s.embedUri === audio.activeSpotifyUri)?.title || 'Spotify Stream'
-    : null;
+    setUploadingMedia(true);
+    const added: CustomAudioTrack[] = [];
+    try {
+      for (const file of Array.from(files)) {
+        const trackId = `video_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+        await saveAudioBlob(trackId, file);
+        added.push({
+          id: trackId,
+          name: file.name.replace(/\.[^/.]+$/, ''),
+          blobKey: trackId,
+          fileSize: file.size,
+          format: file.name.split('.').pop()?.toLowerCase(),
+          mediaType: 'video',
+          category: 'custom',
+          artist: 'Local Video',
+          addedAt: new Date().toISOString(),
+        });
+      }
+      const currentVideos = audio.videoTracks || [];
+      onUpdateAudio({
+        videoTracks: [...added, ...currentVideos],
+      });
+      setStatusMessage(`✓ Imported ${added.length} video file(s).`);
+    } catch {
+      setStatusMessage('⚠ Could not save video.');
+    } finally {
+      setUploadingMedia(false);
+      e.target.value = '';
+    }
+  };
+
+  // Format seconds to mm:ss
+  const formatTime = (secs: number) => {
+    if (!Number.isFinite(secs) || secs < 0) return '0:00';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s < 10 ? '0' : ''}${s}`;
+  };
+
+  // Filter & sort local audio tracks
+  const filteredLocalAudio = useMemo(() => {
+    let list = localAudioTracks.filter(
+      (t) =>
+        t.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (t.artist && t.artist.toLowerCase().includes(searchQuery.toLowerCase()))
+    );
+    if (sortBy === 'title') {
+      list = [...list].sort((a, b) => a.name.localeCompare(b.name));
+    }
+    return list;
+  }, [localAudioTracks, searchQuery, sortBy]);
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto pb-12">
-      {/* 1. TOP HEADER & CURRENT STREAM STATUS */}
+      {/* 1. TOP HEADER & THREE DEDICATED SECTION TABS */}
       <div
         className="p-5 sm:p-6 rounded-3xl border border-slate-800/90 shadow-2xl relative overflow-hidden"
         style={panelBgStyle}
@@ -224,19 +644,19 @@ export const MusicPlayerView: React.FC<MusicPlayerViewProps> = ({
           <div className="flex items-center gap-3.5">
             <div
               className={`w-12 h-12 rounded-2xl flex items-center justify-center shrink-0 border ${
-                isYouTubeActive
+                activeMediaSection === 'local'
+                  ? 'bg-indigo-500/20 text-indigo-400 border-indigo-500/40'
+                  : activeMediaSection === 'online'
                   ? 'bg-red-500/20 text-red-400 border-red-500/40'
-                  : isSpotifyActive
-                  ? 'bg-emerald-500/20 text-emerald-400 border-emerald-500/40'
-                  : 'bg-slate-900 text-slate-400 border-slate-700'
+                  : 'bg-purple-500/20 text-purple-400 border-purple-500/40'
               }`}
             >
-              {isYouTubeActive ? (
-                <Youtube className="w-6 h-6" />
-              ) : isSpotifyActive ? (
-                <Radio className="w-6 h-6" />
-              ) : (
+              {activeMediaSection === 'local' ? (
                 <Music className="w-6 h-6" />
+              ) : activeMediaSection === 'online' ? (
+                <Youtube className="w-6 h-6" />
+              ) : (
+                <Film className="w-6 h-6" />
               )}
             </div>
 
@@ -244,452 +664,303 @@ export const MusicPlayerView: React.FC<MusicPlayerViewProps> = ({
               <div className="flex items-center gap-2">
                 <span
                   className={`text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded ${
-                    isYouTubeActive
+                    activeMediaSection === 'local'
+                      ? 'bg-indigo-500/30 text-indigo-200'
+                      : activeMediaSection === 'online'
                       ? 'bg-red-500/30 text-red-200'
-                      : isSpotifyActive
-                      ? 'bg-emerald-500/30 text-emerald-200'
-                      : 'bg-slate-800 text-slate-400'
+                      : 'bg-purple-500/30 text-purple-200'
                   }`}
                 >
-                  {isYouTubeActive
-                    ? 'YouTube Active'
-                    : isSpotifyActive
-                    ? 'Spotify Active'
-                    : 'Streaming Studio'}
+                  {activeMediaSection === 'local'
+                    ? 'Local Music Player'
+                    : activeMediaSection === 'online'
+                    ? 'Online Focus Streams'
+                    : 'Video Songs Studio'}
                 </span>
                 <span className="text-xs text-slate-400 font-mono">
-                  Persistent Background Audio
+                  Single Active Source Control
                 </span>
               </div>
 
-              <h2 className="text-lg font-bold text-white tracking-tight mt-0.5 truncate max-w-md">
-                {activeStreamTitle || 'Select or paste a YouTube stream or Spotify playlist'}
+              <h2 className="text-lg font-bold text-white tracking-tight mt-0.5">
+                {activeMediaSection === 'local'
+                  ? 'Private Offline Audio Library'
+                  : activeMediaSection === 'online'
+                  ? 'YouTube & Spotify Streaming'
+                  : 'Offline Video Songs Player'}
               </h2>
-
               <p className="text-xs text-slate-400">
-                Audio stays mounted and continues playing when you navigate to other Habitra sections.
+                {activeMediaSection === 'local'
+                  ? 'Play local MP3 and WAV files stored on your machine with zero cloud dependence.'
+                  : activeMediaSection === 'online'
+                  ? 'Curated ambient study streams and custom YouTube/Spotify links.'
+                  : 'Play local MP4 video songs with dedicated playback and full-screen controls.'}
               </p>
             </div>
           </div>
 
-          {/* Stop Button when stream is active */}
-          {(isYouTubeActive || isSpotifyActive) && (
+          {/* Active playback badge & Stop button */}
+          {(isLocalAudioActive || isYouTubeActive || isSpotifyActive || isVideoActive) && (
             <div className="flex items-center gap-2">
+              <span className="text-xs font-mono text-emerald-400 bg-emerald-500/10 border border-emerald-500/30 px-3 py-1.5 rounded-xl flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span>
+                  {isLocalAudioActive
+                    ? 'Local Audio Playing'
+                    : isYouTubeActive
+                    ? 'YouTube Playing'
+                    : isSpotifyActive
+                    ? 'Spotify Playing'
+                    : 'Video Playing'}
+                </span>
+              </span>
               <button
                 type="button"
-                onClick={() =>
-                  onUpdateAudio({
-                    activeYouTubeId: null,
-                    activeSpotifyUri: null,
-                    activeSource: undefined,
-                    isPlaying: false,
-                  })
-                }
-                className="px-3.5 py-2 rounded-xl bg-slate-900/90 hover:bg-rose-500/20 text-slate-300 hover:text-rose-300 border border-slate-700 hover:border-rose-500/40 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors shadow-sm"
+                onClick={handleStopLocalTrack}
+                className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-rose-400 hover:text-rose-300 text-xs font-semibold border border-slate-700 flex items-center gap-1.5 cursor-pointer transition-colors"
+                title="Stop all media playback"
               >
-                <Square className="w-3.5 h-3.5 fill-current text-rose-400" />
-                <span>Stop Stream</span>
+                <Square className="w-3.5 h-3.5 fill-current" />
+                <span>Stop</span>
               </button>
             </div>
           )}
         </div>
 
+        {/* 3 Primary Navigation Section Tabs */}
+        <div className="flex items-center gap-2 mt-5 pt-4 border-t border-slate-800/80">
+          <button
+            type="button"
+            onClick={() => {
+              soundEngine.playUiClick();
+              setActiveMediaSection('local');
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer border ${
+              activeMediaSection === 'local'
+                ? 'bg-indigo-600 text-white border-indigo-500 shadow-md'
+                : 'bg-slate-900/80 text-slate-400 hover:text-white border-slate-800 hover:bg-slate-800'
+            }`}
+          >
+            <Music className="w-4 h-4" />
+            <span>Local Music</span>
+            {localAudioTracks.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-800 text-slate-300 font-mono">
+                {localAudioTracks.length}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              soundEngine.playUiClick();
+              setActiveMediaSection('online');
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer border ${
+              activeMediaSection === 'online'
+                ? 'bg-red-600 text-white border-red-500 shadow-md'
+                : 'bg-slate-900/80 text-slate-400 hover:text-white border-slate-800 hover:bg-slate-800'
+            }`}
+          >
+            <Youtube className="w-4 h-4" />
+            <span>Online Music</span>
+            {(audio.youtubeItems?.length || 0) + (audio.spotifyItems?.length || 0) > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-800 text-slate-300 font-mono">
+                {(audio.youtubeItems?.length || 0) + (audio.spotifyItems?.length || 0)}
+              </span>
+            )}
+          </button>
+
+          <button
+            type="button"
+            onClick={() => {
+              soundEngine.playUiClick();
+              setActiveMediaSection('video');
+            }}
+            className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer border ${
+              activeMediaSection === 'video'
+                ? 'bg-purple-600 text-white border-purple-500 shadow-md'
+                : 'bg-slate-900/80 text-slate-400 hover:text-white border-slate-800 hover:bg-slate-800'
+            }`}
+          >
+            <Film className="w-4 h-4" />
+            <span>Video Songs</span>
+            {localVideoTracks.length > 0 && (
+              <span className="px-1.5 py-0.2 rounded-full text-[10px] bg-slate-800 text-slate-300 font-mono">
+                {localVideoTracks.length}
+              </span>
+            )}
+          </button>
+        </div>
+
+        {/* Temporary Feedback Banner */}
         {statusMessage && (
-          <div className="mt-4 px-3.5 py-2 rounded-xl bg-indigo-500/15 border border-indigo-500/30 text-xs text-indigo-200 flex items-center gap-2">
-            <Check className="w-4 h-4 text-indigo-400" />
+          <div className="mt-3 p-2.5 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 text-xs flex items-center gap-2">
+            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
             <span>{statusMessage}</span>
           </div>
         )}
       </div>
 
-      {/* 2. SOURCE TABS */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800/80 pb-3">
-        {[
-          {
-            id: 'youtube',
-            label: '▶ YouTube Streams',
-            desc: 'Live lofi, study beats & playlists',
-          },
-          {
-            id: 'spotify',
-            label: '🟢 Spotify Integration',
-            desc: 'Curated playlists & official embeds',
-          },
-          {
-            id: 'library',
-            label: '📁 Personal Library',
-            desc: 'Local MP3/WAV files',
-          },
-          {
-            id: 'saved',
-            label: '⭐ Saved Streams',
-            desc: 'Bookmarked focus stations',
-          },
-        ].map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            onClick={() => setActiveTab(tab.id as typeof activeTab)}
-            className={`px-4 py-2.5 rounded-xl text-xs font-semibold tracking-wide transition-all cursor-pointer flex items-center gap-2 border ${
-              activeTab === tab.id
-                ? 'bg-indigo-600/90 text-white border-indigo-400/40 shadow-lg shadow-indigo-600/20'
-                : 'bg-slate-900/60 text-slate-400 hover:text-white hover:bg-slate-800/80 border-slate-800'
-            }`}
-          >
-            <span>{tab.label}</span>
-          </button>
-        ))}
-      </div>
-
-      {/* 3. TAB CONTENT: YOUTUBE */}
-      {activeTab === 'youtube' && (
-        <div className="space-y-6">
-          {/* Add YouTube URL Card */}
-          <div
-            className="p-5 sm:p-6 rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-md shadow-xl"
-            style={panelBgStyle}
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <Youtube className="w-5 h-5 text-red-500" />
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
-                Stream from YouTube
-              </h3>
-            </div>
-            <p className="text-xs text-slate-400 mb-4">
-              Paste any YouTube video or playlist link (e.g. Lofi Girl, synthwave coding stream, classical study).
-              Playback is kept alive across all tabs via the persistent application-shell player.
-            </p>
-
-            <form onSubmit={handleAddYouTubeUrl} className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <input
-                  type="text"
-                  value={youtubeInputUrl}
-                  onChange={(e) => setYoutubeInputUrl(e.target.value)}
-                  placeholder="https://www.youtube.com/watch?v=..."
-                  className="sm:col-span-2 px-3.5 py-2.5 rounded-xl bg-slate-950/90 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-500 transition-colors"
-                />
-                <input
-                  type="text"
-                  value={youtubeInputTitle}
-                  onChange={(e) => setYoutubeInputTitle(e.target.value)}
-                  placeholder="Station title (optional)"
-                  className="px-3.5 py-2.5 rounded-xl bg-slate-950/90 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-red-500 transition-colors"
-                />
-              </div>
-
-              {youtubeError && (
-                <div className="text-xs text-rose-400 font-medium">{youtubeError}</div>
-              )}
-
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-[11px] text-slate-500 font-mono">
-                  Supports standard watch links, playlists (&amp;list=...), and shorts
-                </span>
-                <button
-                  type="submit"
-                  className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 text-white text-xs font-semibold flex items-center gap-2 cursor-pointer shadow-md transition-colors"
-                >
-                  <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>Start &amp; Save Stream</span>
-                </button>
-              </div>
-            </form>
-          </div>
-
-          {/* Curated YouTube Focus Streams */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">
-                Curated Focus &amp; Coding Streams
-              </h4>
-              <span className="text-xs text-slate-500">1-click to start</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {[
-                {
-                  id: 'jfKfPfyJRdk',
-                  title: 'Lofi Girl — Beats to Relax / Study to',
-                  channel: 'Lofi Girl · 24/7 Live',
-                  tag: 'LOFI',
-                },
-                {
-                  id: 'kYJqD96JjF0',
-                  title: 'Minecraft Ambience & Music Extended',
-                  channel: 'C418 & Lena Raine',
-                  tag: 'AMBIENT',
-                },
-                {
-                  id: '4xDzrJKXOOY',
-                  title: 'Synthwave / Chillwave Coding Beats',
-                  channel: 'ChillSynth FM',
-                  tag: 'SYNTH',
-                },
-                {
-                  id: 'lTRiuFIWV54',
-                  title: 'Rainy Cafe & Gentle Jazz Study',
-                  channel: 'Cafe Music BGM',
-                  tag: 'RAIN & JAZZ',
-                },
-                {
-                  id: '7NOSDKb0HlU',
-                  title: 'Deep Focus Classical Piano',
-                  channel: 'HalidonMusic',
-                  tag: 'CLASSICAL',
-                },
-                {
-                  id: 'WPni755-Krg',
-                  title: 'Midnight Cozy Library Ambient',
-                  channel: 'Calmed by Nature',
-                  tag: 'LIBRARY',
-                },
-              ].map((item) => {
-                const isSelected = audio.activeYouTubeId === item.id;
-                return (
-                  <div
-                    key={item.id}
-                    onClick={() => {
-                      onUpdateAudio({
-                        activeYouTubeId: item.id,
-                        activeSpotifyUri: null,
-                        activeSource: 'youtube',
-                        isPlaying: true,
-                      });
-                      setStatusMessage(`✓ Now playing: ${item.title}`);
-                      window.setTimeout(() => setStatusMessage(null), 3000);
-                    }}
-                    className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between group ${
-                      isSelected
-                        ? 'border-red-500/60 bg-red-500/10 shadow-lg'
-                        : 'border-slate-800 bg-slate-900/60 hover:bg-slate-800/80 hover:border-slate-700'
-                    }`}
-                  >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-slate-300">
-                          {item.tag}
-                        </span>
-                        {isSelected && (
-                          <span className="text-[10px] font-bold text-red-400 flex items-center gap-1 font-mono">
-                            <span className="w-1.5 h-1.5 rounded-full bg-red-500 animate-pulse" />
-                            ACTIVE
-                          </span>
-                        )}
-                      </div>
-                      <h5 className="text-sm font-semibold text-white group-hover:text-red-300 transition-colors line-clamp-2">
-                        {item.title}
-                      </h5>
-                      <p className="text-xs text-slate-400 mt-1">{item.channel}</p>
+      {/* =========================================================================
+          SECTION 1: LOCAL MUSIC (OFFLINE MP3 / WAV)
+         ========================================================================= */}
+      {activeMediaSection === 'local' && (
+        <div className="space-y-5">
+          {/* Active Local Player Controls Card */}
+          {currentLocalTrack && (
+            <div
+              className="p-5 rounded-2xl border border-slate-700/80 bg-slate-900/90 shadow-xl space-y-3"
+              style={panelBgStyle}
+            >
+              <div className="flex items-center justify-between gap-4">
+                <div className="flex items-center gap-3 min-w-0">
+                  <div className="w-10 h-10 rounded-xl bg-indigo-600/20 border border-indigo-500/30 text-indigo-400 flex items-center justify-center shrink-0">
+                    <Music className="w-5 h-5" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-white truncate">
+                      {currentLocalTrack.name}
                     </div>
-
-                    <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between text-xs text-red-400 font-medium">
-                      <span>{isSelected ? 'Currently Playing' : 'Play Stream'}</span>
-                      <Play className="w-3.5 h-3.5 fill-current" />
+                    <div className="text-[11px] text-slate-400 font-mono truncate">
+                      {currentLocalTrack.artist || 'Local Music File'} · {currentLocalTrack.format?.toUpperCase() || 'MP3'}
                     </div>
                   </div>
-                );
-              })}
-            </div>
-          </div>
-        </div>
-      )}
+                </div>
 
-      {/* 4. TAB CONTENT: SPOTIFY */}
-      {activeTab === 'spotify' && (
-        <div className="space-y-6">
-          {/* Add Spotify URL Card */}
-          <div
-            className="p-5 sm:p-6 rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-md shadow-xl"
-            style={panelBgStyle}
-          >
-            <div className="flex items-center gap-2 mb-3">
-              <Radio className="w-5 h-5 text-emerald-400" />
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
-                Spotify Focus Integration
-              </h3>
-            </div>
-            <p className="text-xs text-slate-400 mb-4 leading-relaxed">
-              Embed any Spotify playlist, album, or track. Spotify playback operates safely through the official Spotify embed.
-              Logged-in Spotify users enjoy full tracks; free/guest users hear official 30s previews per Spotify policy.
-            </p>
-
-            <form onSubmit={handleAddSpotifyUrl} className="space-y-3">
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                <input
-                  type="text"
-                  value={spotifyInputUrl}
-                  onChange={(e) => setSpotifyInputUrl(e.target.value)}
-                  placeholder="https://open.spotify.com/playlist/..."
-                  className="sm:col-span-2 px-3.5 py-2.5 rounded-xl bg-slate-950/90 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
-                />
-                <input
-                  type="text"
-                  value={spotifyInputTitle}
-                  onChange={(e) => setSpotifyInputTitle(e.target.value)}
-                  placeholder="Playlist title (optional)"
-                  className="px-3.5 py-2.5 rounded-xl bg-slate-950/90 border border-slate-700 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500 transition-colors"
-                />
-              </div>
-
-              {spotifyError && (
-                <div className="text-xs text-rose-400 font-medium">{spotifyError}</div>
-              )}
-
-              <div className="flex items-center justify-between pt-1">
-                <span className="text-[11px] text-slate-500 font-mono">
-                  Paste links from Spotify Web or Desktop app
-                </span>
-                <button
-                  type="submit"
-                  className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold flex items-center gap-2 cursor-pointer shadow-md transition-colors"
-                >
-                  <Play className="w-3.5 h-3.5 fill-current" />
-                  <span>Mount &amp; Save Spotify</span>
-                </button>
-              </div>
-            </form>
-          </div>
-
-          {/* Curated Spotify Playlists */}
-          <div>
-            <div className="flex items-center justify-between mb-3">
-              <h4 className="text-xs font-bold text-slate-400 uppercase tracking-wider font-mono">
-                Curated Spotify Focus Playlists
-              </h4>
-              <span className="text-xs text-slate-500">Official Spotify links</span>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {[
-                {
-                  uri: 'playlist/37i9dQZF1DWZeKCadgRdKQ',
-                  title: 'Deep Focus',
-                  desc: 'Keep calm and focus with ambient and post-rock music.',
-                },
-                {
-                  uri: 'playlist/37i9dQZF1DXdLEN7aqioXM',
-                  title: 'Lofi Beats',
-                  desc: 'Beats to relax, study, and focus to.',
-                },
-                {
-                  uri: 'playlist/37i9dQZF1DX4sWSpwq3LiO',
-                  title: 'Peaceful Piano',
-                  desc: 'Peaceful piano to help you slow down, breathe, and focus.',
-                },
-                {
-                  uri: 'playlist/37i9dQZF1DX3Ogo9pFvBkY',
-                  title: 'Ambient Chill',
-                  desc: 'Atmospheric electronic landscapes and chilled beats.',
-                },
-                {
-                  uri: 'playlist/37i9dQZF1DX8Uebhn9wzrS',
-                  title: 'Chill Lofi Study',
-                  desc: 'The best instrumental beats for study sessions.',
-                },
-                {
-                  uri: 'playlist/37i9dQZF1DWWQRwui0ExPn',
-                  title: 'Lo-Fi Cafe',
-                  desc: 'Cozy coffeehouse beats to study or read with.',
-                },
-              ].map((item) => {
-                const isSelected = audio.activeSpotifyUri === item.uri;
-                return (
-                  <div
-                    key={item.uri}
-                    onClick={() => {
-                      onUpdateAudio({
-                        activeSpotifyUri: item.uri,
-                        activeYouTubeId: null,
-                        activeSource: 'spotify',
-                        isPlaying: true,
-                      });
-                      setStatusMessage(`✓ Mounted Spotify playlist: ${item.title}`);
-                      window.setTimeout(() => setStatusMessage(null), 3000);
-                    }}
-                    className={`p-4 rounded-2xl border text-left transition-all cursor-pointer flex flex-col justify-between group ${
-                      isSelected
-                        ? 'border-emerald-500/60 bg-emerald-500/10 shadow-lg'
-                        : 'border-slate-800 bg-slate-900/60 hover:bg-slate-800/80 hover:border-slate-700'
-                    }`}
+                {/* Transport Buttons */}
+                <div className="flex items-center gap-2 shrink-0">
+                  <button
+                    type="button"
+                    onClick={() => onPrevTrack()}
+                    className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+                    title="Previous Track"
                   >
-                    <div>
-                      <div className="flex items-center justify-between gap-2 mb-2">
-                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-slate-800 text-emerald-300">
-                          SPOTIFY
-                        </span>
-                        {isSelected && (
-                          <span className="text-[10px] font-bold text-emerald-400 flex items-center gap-1 font-mono">
-                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
-                            ACTIVE
-                          </span>
-                        )}
-                      </div>
-                      <h5 className="text-sm font-semibold text-white group-hover:text-emerald-300 transition-colors">
-                        {item.title}
-                      </h5>
-                      <p className="text-xs text-slate-400 mt-1">{item.desc}</p>
-                    </div>
+                    <SkipBack className="w-4 h-4" />
+                  </button>
 
-                    <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between text-xs text-emerald-400 font-medium">
-                      <span>{isSelected ? 'Loaded in Player' : 'Open in Player'}</span>
-                      <Play className="w-3.5 h-3.5 fill-current" />
-                    </div>
-                  </div>
-                );
-              })}
+                  {isLocalAudioActive ? (
+                    <button
+                      type="button"
+                      onClick={handlePauseLocalTrack}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow cursor-pointer"
+                    >
+                      <Pause className="w-4 h-4 fill-current" />
+                      <span>Pause</span>
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={handleResumeLocalTrack}
+                      className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs flex items-center gap-1.5 shadow cursor-pointer"
+                    >
+                      <Play className="w-4 h-4 fill-current" />
+                      <span>Resume</span>
+                    </button>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => onNextTrack()}
+                    className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+                    title="Next Track"
+                  >
+                    <SkipForward className="w-4 h-4" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={handleStopLocalTrack}
+                    className="p-2 rounded-lg bg-slate-800 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 cursor-pointer"
+                    title="Stop Playback"
+                  >
+                    <Square className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Cinematic Audio-Reactive Visualizer Spectrum */}
+              <div className="w-full h-14 rounded-xl bg-slate-950/80 border border-slate-800 p-2 flex items-center justify-center overflow-hidden">
+                <AudioReactiveVisualizer
+                  isPlaying={isLocalAudioActive}
+                  volume={audio.musicVolume}
+                  accentColor={styleSettings.accentColor}
+                  variant="cinematic"
+                  className="w-full h-full"
+                />
+              </div>
+
+              {/* Progress Bar & Seek */}
+              <div className="space-y-1">
+                <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
+                  <span>{formatTime(localProgress.currentTime)}</span>
+                  <span>{formatTime(localProgress.duration)}</span>
+                </div>
+                <input
+                  type="range"
+                  min="0"
+                  max={localProgress.duration || 100}
+                  step="0.5"
+                  value={localProgress.currentTime || 0}
+                  onChange={(e) => soundEngine.seekTo(parseFloat(e.target.value))}
+                  className="w-full accent-indigo-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+                />
+              </div>
+
+              {localProgress.playbackError && (
+                <div className="text-xs text-rose-400 flex items-center gap-1 font-mono">
+                  <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                  <span>{localProgress.playbackError}</span>
+                </div>
+              )}
             </div>
-          </div>
-        </div>
-      )}
+          )}
 
-      {/* 5. TAB CONTENT: PERSONAL LIBRARY */}
-      {activeTab === 'library' && (
-        <div className="space-y-6">
+          {/* Library Management & Track List */}
           <div
             className="p-5 sm:p-6 rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-md shadow-xl"
             style={panelBgStyle}
           >
-            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-4">
+            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 mb-5">
               <div>
                 <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono">
-                  Personal Offline Audio Files
+                  Local Audio Library
                 </h3>
                 <p className="text-xs text-slate-400">
-                  Import local MP3 or WAV files for your focus session. Files remain 100% on your machine.
+                  Supported formats: MP3, WAV, OGG, FLAC, M4A, AAC. Files remain permanently on your drive.
                 </p>
               </div>
 
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={handleOpenAudioFileDialog}
                   disabled={uploadingMedia}
                   className="px-3.5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow transition-colors"
                 >
                   <Upload className="w-3.5 h-3.5" />
-                  <span>+ Import Files</span>
+                  <span>Import Files</span>
                 </button>
                 <input
-                  ref={fileInputRef}
+                  ref={audioFileInputRef}
                   type="file"
                   accept="audio/*,.mp3,.wav,.ogg,.flac,.m4a"
                   multiple
-                  onChange={handleFileUpload}
+                  onChange={handleWebAudioUpload}
                   className="hidden"
                 />
 
                 <button
                   type="button"
-                  onClick={() => folderInputRef.current?.click()}
+                  onClick={handleOpenAudioFolderDialog}
                   disabled={uploadingMedia}
                   className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors"
                 >
                   <FolderOpen className="w-3.5 h-3.5 text-indigo-400" />
-                  <span>+ Folder</span>
+                  <span>Import Folder</span>
                 </button>
                 <input
-                  ref={folderInputRef}
+                  ref={audioFolderInputRef}
                   type="file"
                   accept="audio/*,.mp3,.wav,.ogg,.flac"
                   multiple
@@ -697,184 +968,835 @@ export const MusicPlayerView: React.FC<MusicPlayerViewProps> = ({
                     webkitdirectory: '',
                     directory: '',
                   } as React.InputHTMLAttributes<HTMLInputElement>)}
-                  onChange={handleFileUpload}
+                  onChange={handleWebAudioUpload}
                   className="hidden"
                 />
               </div>
             </div>
 
-            {audio.customTracks.length === 0 ? (
-              <div className="p-8 rounded-xl border border-dashed border-slate-800 text-center">
-                <Music className="w-8 h-8 text-slate-600 mx-auto mb-2" />
-                <h5 className="text-sm font-semibold text-slate-300">
-                  No personal files imported yet
-                </h5>
-                <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1">
-                  Click &quot;+ Import Files&quot; above to add your own offline audio files for local study sessions.
+            {/* Search and Sort Bar */}
+            {localAudioTracks.length > 0 && (
+              <div className="flex items-center justify-between gap-3 mb-4">
+                <div className="relative flex-1 max-w-xs">
+                  <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+                  <input
+                    type="text"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Search local tracks..."
+                    className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-slate-950/80 border border-slate-800 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <button
+                  type="button"
+                  onClick={() => setSortBy((s) => (s === 'title' ? 'date' : 'title'))}
+                  className="px-2.5 py-1.5 rounded-lg bg-slate-900 border border-slate-800 text-slate-400 hover:text-white text-xs flex items-center gap-1 cursor-pointer"
+                >
+                  <ArrowUpDown className="w-3 h-3" />
+                  <span>Sort: {sortBy === 'title' ? 'Title' : 'Recently Added'}</span>
+                </button>
+              </div>
+            )}
+
+            {/* Track List */}
+            {filteredLocalAudio.length === 0 ? (
+              <div className="p-10 rounded-2xl border border-dashed border-slate-800 text-center">
+                <Music className="w-10 h-10 text-slate-600 mx-auto mb-3" />
+                <h4 className="text-sm font-semibold text-slate-300">
+                  {localAudioTracks.length === 0
+                    ? 'No local music imported yet'
+                    : 'No tracks match your search'}
+                </h4>
+                <p className="text-xs text-slate-500 max-w-sm mx-auto mt-1 leading-relaxed">
+                  Click &quot;Import Files&quot; or &quot;Import Folder&quot; above to select your favorite offline focus tracks.
+                  Local files never upload to external servers.
                 </p>
               </div>
             ) : (
               <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
-                {audio.customTracks.map((item) => (
-                  <div
-                    key={item.id}
-                    className="p-3 rounded-xl border border-slate-800 bg-slate-950/60 flex items-center justify-between gap-3"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <Music className="w-4 h-4 text-indigo-400 shrink-0" />
-                      <div className="min-w-0">
-                        <div className="text-xs font-semibold text-white truncate">
-                          {item.name}
-                        </div>
-                        <div className="text-[10px] text-slate-500 font-mono">
-                          {item.folderName || 'Local File'}
+                {filteredLocalAudio.map((track) => {
+                  const isCurrent = audio.currentTrackId === track.id && isLocalAudioActive;
+
+                  return (
+                    <div
+                      key={track.id}
+                      className={`p-3 rounded-xl border flex items-center justify-between gap-3 transition-colors ${
+                        isCurrent
+                          ? 'border-indigo-500/50 bg-indigo-500/10'
+                          : 'border-slate-800/80 bg-slate-950/60 hover:bg-slate-900/60'
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0 flex-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            if (isCurrent) {
+                              handlePauseLocalTrack();
+                            } else {
+                              handlePlayLocalTrack(track.id);
+                            }
+                          }}
+                          className={`w-8 h-8 rounded-lg flex items-center justify-center shrink-0 cursor-pointer shadow transition-colors ${
+                            isCurrent
+                              ? 'bg-indigo-600 text-white'
+                              : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                          }`}
+                          title={isCurrent ? 'Pause Track' : 'Play Track'}
+                        >
+                          {isCurrent ? (
+                            <Pause className="w-4 h-4 fill-current" />
+                          ) : (
+                            <Play className="w-4 h-4 fill-current ml-0.5" />
+                          )}
+                        </button>
+
+                        <div className="min-w-0">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xs font-semibold text-white truncate">
+                              {track.name}
+                            </span>
+                            <span className="text-[9px] font-mono font-bold px-1.5 py-0.5 rounded bg-slate-800 text-indigo-300">
+                              {track.format ? track.format.toUpperCase() : 'AUDIO'}
+                            </span>
+                            {isCurrent && (
+                              <span className="text-[10px] text-emerald-400 font-mono font-semibold flex items-center gap-1">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                                PLAYING
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-slate-500 font-mono truncate max-w-md">
+                            {track.filePath || track.folderName || 'Local Library File'}
+                          </div>
                         </div>
                       </div>
-                    </div>
 
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const next = audio.customTracks.filter((t) => t.id !== item.id);
-                        onUpdateAudio({ customTracks: next });
-                      }}
-                      className="p-1 rounded text-slate-500 hover:text-rose-400 cursor-pointer"
-                      title="Remove track"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  </div>
-                ))}
+                      <div className="flex items-center gap-2 shrink-0">
+                        {track.durationSeconds && (
+                          <span className="text-[11px] font-mono text-slate-400">
+                            {formatTime(track.durationSeconds)}
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={() => {
+                            soundEngine.playUiClick();
+                            const next = (audio.customTracks || []).filter((t) => t.id !== track.id);
+                            onUpdateAudio({ customTracks: next });
+                          }}
+                          className="p-1.5 rounded-lg text-slate-500 hover:text-rose-400 hover:bg-rose-500/10 cursor-pointer transition-colors"
+                          title="Remove from library (File is not deleted)"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>
         </div>
       )}
 
-      {/* 6. TAB CONTENT: SAVED STREAMS */}
-      {activeTab === 'saved' && (
+      {/* =========================================================================
+          SECTION 2: ONLINE MUSIC (YOUTUBE & SPOTIFY)
+         ========================================================================= */}
+      {activeMediaSection === 'online' && (
         <div className="space-y-6">
+          {/* Subtabs for YouTube / Spotify */}
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.playUiClick();
+                setOnlineSubTab('youtube');
+              }}
+              className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer ${
+                onlineSubTab === 'youtube'
+                  ? 'bg-red-600 text-white border-red-500 shadow-md'
+                  : 'bg-slate-900/80 text-slate-400 hover:text-white border-slate-800'
+              }`}
+            >
+              <Youtube className="w-4 h-4" />
+              <span>YouTube Streams</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                soundEngine.playUiClick();
+                setOnlineSubTab('spotify');
+              }}
+              className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border transition-all cursor-pointer ${
+                onlineSubTab === 'spotify'
+                  ? 'bg-emerald-600 text-white border-emerald-500 shadow-md'
+                  : 'bg-slate-900/80 text-slate-400 hover:text-white border-slate-800'
+              }`}
+            >
+              <Radio className="w-4 h-4" />
+              <span>Spotify Playlists</span>
+            </button>
+          </div>
+
+          {/* YouTube Form & Saved List */}
+          {onlineSubTab === 'youtube' && (
+            <div className="space-y-5">
+              <div
+                className="p-5 sm:p-6 rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-md shadow-xl"
+                style={panelBgStyle}
+              >
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono mb-2 flex items-center gap-2">
+                  <Youtube className="w-4 h-4 text-red-400" />
+                  <span>Add YouTube Focus Stream or Playlist</span>
+                </h3>
+                <p className="text-xs text-slate-400 mb-4">
+                  Paste any YouTube URL or playlist. Audio streams continue playing in the background while you navigate Habitra.
+                </p>
+
+                <form onSubmit={handleAddYouTubeUrl} className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                    <div className="sm:col-span-8">
+                      <input
+                        type="text"
+                        value={youtubeInputUrl}
+                        onChange={(e) => setYoutubeInputUrl(e.target.value)}
+                        placeholder="https://www.youtube.com/watch?v=... or https://youtu.be/..."
+                        className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-red-500"
+                      />
+                    </div>
+                    <div className="sm:col-span-4">
+                      <input
+                        type="text"
+                        value={youtubeInputTitle}
+                        onChange={(e) => setYoutubeInputTitle(e.target.value)}
+                        placeholder="Stream title (optional)"
+                        className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-red-500"
+                      />
+                    </div>
+                  </div>
+
+                  {youtubeError && (
+                    <div className="text-xs text-rose-400 flex items-center gap-1 font-medium">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{youtubeError}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="submit"
+                      className="px-5 py-2 rounded-xl bg-red-600 hover:bg-red-500 text-white font-bold text-xs flex items-center gap-2 shadow cursor-pointer transition-colors"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Load &amp; Play Stream</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openExternalUrl('https://www.youtube.com')}
+                      className="text-xs text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Open YouTube in Browser</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Saved YouTube Streams */}
+              <div
+                className="p-5 sm:p-6 rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-md shadow-xl"
+                style={panelBgStyle}
+              >
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider font-mono mb-3">
+                  Saved YouTube Focus Streams
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {(audio.youtubeItems || []).map((item) => {
+                    const isSelected = audio.activeYouTubeId === item.embedId && isYouTubeActive;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={`p-3.5 rounded-xl border flex flex-col justify-between transition-colors ${
+                          isSelected
+                            ? 'border-red-500/60 bg-red-500/10 shadow'
+                            : 'border-slate-800 bg-slate-950/60 hover:bg-slate-900'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="text-[10px] font-mono uppercase font-bold text-red-400 px-1.5 py-0.5 rounded bg-red-500/20">
+                              {item.type}
+                            </span>
+                            <h5 className="text-xs font-bold text-white mt-1.5 truncate">
+                              {item.title}
+                            </h5>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              const next = (audio.youtubeItems || []).filter((y) => y.id !== item.id);
+                              onUpdateAudio({ youtubeItems: next });
+                            }}
+                            className="text-slate-500 hover:text-rose-400 p-1 cursor-pointer"
+                            title="Remove saved stream"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 mt-3 pt-2 border-t border-slate-800/80">
+                          <button
+                            type="button"
+                            onClick={() => handlePlaySavedYouTube(item)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer ${
+                              isSelected
+                                ? 'bg-red-600 text-white'
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                            }`}
+                          >
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>{isSelected ? 'Playing' : 'Play Stream'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => openExternalUrl(item.url)}
+                            className="text-[11px] text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                            title="Open in Default Browser"
+                          >
+                            <span>Browser</span>
+                            <ExternalLink className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Spotify Form & Saved List */}
+          {onlineSubTab === 'spotify' && (
+            <div className="space-y-5">
+              <div
+                className="p-5 sm:p-6 rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-md shadow-xl"
+                style={panelBgStyle}
+              >
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono mb-2 flex items-center gap-2">
+                  <Radio className="w-4 h-4 text-emerald-400" />
+                  <span>Add Spotify Playlist or Track Link</span>
+                </h3>
+                <p className="text-xs text-slate-400 mb-4">
+                  Paste any Spotify track, album, or playlist URL (open.spotify.com/playlist/...).
+                </p>
+
+                <form onSubmit={handleAddSpotifyUrl} className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-12 gap-3">
+                    <div className="sm:col-span-8">
+                      <input
+                        type="text"
+                        value={spotifyInputUrl}
+                        onChange={(e) => setSpotifyInputUrl(e.target.value)}
+                        placeholder="https://open.spotify.com/playlist/... or spotify:playlist:..."
+                        className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                    <div className="sm:col-span-4">
+                      <input
+                        type="text"
+                        value={spotifyInputTitle}
+                        onChange={(e) => setSpotifyInputTitle(e.target.value)}
+                        placeholder="Playlist label (optional)"
+                        className="w-full px-4 py-2.5 rounded-xl bg-slate-950 border border-slate-700/80 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                      />
+                    </div>
+                  </div>
+
+                  {spotifyError && (
+                    <div className="text-xs text-rose-400 flex items-center gap-1 font-medium">
+                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
+                      <span>{spotifyError}</span>
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between pt-1">
+                    <button
+                      type="submit"
+                      className="px-5 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs flex items-center gap-2 shadow cursor-pointer transition-colors"
+                    >
+                      <Play className="w-3.5 h-3.5 fill-current" />
+                      <span>Load Spotify Embed</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => openExternalUrl('spotify:')}
+                      className="text-xs text-slate-400 hover:text-white flex items-center gap-1 cursor-pointer"
+                    >
+                      <span>Open Spotify App</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Saved Spotify Items */}
+              <div
+                className="p-5 sm:p-6 rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-md shadow-xl"
+                style={panelBgStyle}
+              >
+                <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider font-mono mb-3">
+                  Saved Spotify Streams
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {(audio.spotifyItems || []).map((item) => {
+                    const isSelected = audio.activeSpotifyUri === item.embedUri && isSpotifyActive;
+
+                    return (
+                      <div
+                        key={item.id}
+                        className={`p-3.5 rounded-xl border flex flex-col justify-between transition-colors ${
+                          isSelected
+                            ? 'border-emerald-500/60 bg-emerald-500/10 shadow'
+                            : 'border-slate-800 bg-slate-950/60 hover:bg-slate-900'
+                        }`}
+                      >
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="min-w-0">
+                            <span className="text-[10px] font-mono uppercase font-bold text-emerald-400 px-1.5 py-0.5 rounded bg-emerald-500/20">
+                              {item.type}
+                            </span>
+                            <h5 className="text-xs font-bold text-white mt-1.5 truncate">
+                              {item.title}
+                            </h5>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              const next = (audio.spotifyItems || []).filter((s) => s.id !== item.id);
+                              onUpdateAudio({ spotifyItems: next });
+                            }}
+                            className="text-slate-500 hover:text-rose-400 p-1 cursor-pointer"
+                            title="Remove saved item"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-2 mt-3 pt-2 border-t border-slate-800/80">
+                          <button
+                            type="button"
+                            onClick={() => handlePlaySavedSpotify(item)}
+                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer ${
+                              isSelected
+                                ? 'bg-emerald-600 text-white'
+                                : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                            }`}
+                          >
+                            <Play className="w-3 h-3 fill-current" />
+                            <span>{isSelected ? 'Loaded' : 'Load Player'}</span>
+                          </button>
+
+                          <div className="flex items-center gap-2">
+                            <button
+                              type="button"
+                              onClick={() => openExternalUrl(`spotify:${item.embedUri}`)}
+                              className="text-[11px] text-emerald-400 hover:underline flex items-center gap-0.5 cursor-pointer"
+                            >
+                              <span>App</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => openExternalUrl(item.url)}
+                              className="text-[11px] text-slate-400 hover:text-white flex items-center gap-0.5 cursor-pointer"
+                            >
+                              <span>Web</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* =========================================================================
+          SECTION 3: LOCAL VIDEO SONGS (MP4 / WEBM)
+         ========================================================================= */}
+      {activeMediaSection === 'video' && (
+        <div className="space-y-6">
+          {/* Active Video Player Viewport */}
+          <div
+            className="p-5 sm:p-6 rounded-2xl border border-slate-800/80 bg-slate-900/80 backdrop-blur-md shadow-2xl space-y-4"
+            style={panelBgStyle}
+          >
+            <div className="flex items-center justify-between">
+              <div>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono flex items-center gap-2">
+                  <Film className="w-4 h-4 text-purple-400" />
+                  <span>Video Songs Screen</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  {currentVideoTrack ? currentVideoTrack.name : 'Select an imported video song to start playback.'}
+                </p>
+              </div>
+
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleOpenVideoFileDialog}
+                  disabled={uploadingMedia}
+                  className="px-3.5 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow transition-colors"
+                >
+                  <Upload className="w-3.5 h-3.5" />
+                  <span>Import Video Files (MP4)</span>
+                </button>
+                <input
+                  ref={videoFileInputRef}
+                  type="file"
+                  accept="video/mp4,video/webm,video/mov,video/*"
+                  multiple
+                  onChange={handleWebVideoUpload}
+                  className="hidden"
+                />
+              </div>
+            </div>
+
+            {/* Video Canvas & Fullscreen Theater Container */}
+            <div
+              ref={videoContainerRef}
+              className={
+                isVideoFullscreen
+                  ? 'fixed inset-0 z-50 bg-black flex flex-col justify-between p-4 sm:p-6 overflow-hidden'
+                  : 'relative w-full aspect-video max-h-[440px] rounded-2xl overflow-hidden bg-black shadow-2xl border border-slate-800 flex items-center justify-center group'
+              }
+              onMouseMove={() => {
+                setShowFullscreenOverlay(true);
+                if (hideOverlayTimerRef.current) {
+                  window.clearTimeout(hideOverlayTimerRef.current);
+                }
+                if (isVideoFullscreen) {
+                  hideOverlayTimerRef.current = window.setTimeout(() => {
+                    setShowFullscreenOverlay(false);
+                  }, 3500);
+                }
+              }}
+            >
+              {/* Video Element Mount Container */}
+              <div
+                ref={videoMountRef}
+                className="w-full h-full flex items-center justify-center cursor-pointer select-none"
+                onDoubleClick={handleToggleVideoFullscreen}
+              />
+
+              {/* Placeholder when no video is loaded */}
+              {!currentVideoTrack && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center text-center p-6 text-slate-500 space-y-2 pointer-events-none">
+                  <Film className="w-12 h-12 text-slate-700 mx-auto" />
+                  <p className="text-xs">No video song selected. Choose an imported MP4 video below to begin playback.</p>
+                </div>
+              )}
+
+              {/* Floating Top Bar in Fullscreen Mode */}
+              {isVideoFullscreen && showFullscreenOverlay && (
+                <div className="absolute top-4 left-4 right-4 flex items-center justify-between z-30 pointer-events-auto transition-opacity duration-300">
+                  <div className="px-3.5 py-1.5 rounded-xl bg-black/80 backdrop-blur-md border border-slate-800 text-xs font-semibold text-white flex items-center gap-2 shadow-xl">
+                    <Film className="w-3.5 h-3.5 text-purple-400" />
+                    <span className="truncate max-w-sm">{currentVideoTrack?.name || 'Video Song'}</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleToggleVideoFullscreen}
+                    className="px-3 py-1.5 rounded-xl bg-slate-900/90 hover:bg-slate-800 text-slate-200 border border-slate-700 text-xs font-semibold flex items-center gap-1.5 cursor-pointer shadow-lg transition-colors"
+                    title="Exit Fullscreen (Esc)"
+                  >
+                    <Minimize2 className="w-3.5 h-3.5" />
+                    <span>Exit Fullscreen</span>
+                    <kbd className="px-1.5 py-0.5 rounded bg-black/60 text-[10px] font-mono text-slate-400">Esc</kbd>
+                  </button>
+                </div>
+              )}
+
+              {/* Error Overlay with Clear Diagnostic Guidance */}
+              {videoProgress.errorMsg && (
+                <div className="absolute inset-0 bg-black/90 backdrop-blur-sm flex flex-col items-center justify-center p-6 text-center text-rose-300 space-y-3 z-30">
+                  <div className="w-12 h-12 rounded-2xl bg-rose-500/10 border border-rose-500/30 flex items-center justify-center text-rose-400">
+                    <AlertCircle className="w-6 h-6" />
+                  </div>
+                  <div className="space-y-1 max-w-md">
+                    <p className="text-xs font-semibold text-rose-200">{videoProgress.errorMsg}</p>
+                    <p className="text-[11px] text-slate-400">
+                      Standard MP4 (H.264 video with AAC audio) is recommended for smooth playback.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleOpenVideoFileDialog}
+                    className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white text-xs font-bold shadow cursor-pointer transition-colors"
+                  >
+                    Re-import MP4 File
+                  </button>
+                </div>
+              )}
+
+              {/* Floating Fullscreen Controls Bar */}
+              {isVideoFullscreen && showFullscreenOverlay && currentVideoTrack && (
+                <div className="absolute bottom-6 left-6 right-6 max-w-3xl mx-auto p-4 rounded-2xl bg-slate-950/90 border border-slate-800/90 backdrop-blur-xl shadow-2xl space-y-2 z-30 pointer-events-auto transition-opacity duration-300">
+                  {/* Seek Bar */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
+                      <span>{formatTime(videoProgress.currentTime)}</span>
+                      <span className="text-[10px] text-slate-500 font-sans">
+                        Double-click video or press Esc to exit fullscreen
+                      </span>
+                      <span>{formatTime(videoProgress.duration)}</span>
+                    </div>
+                    <input
+                      type="range"
+                      min="0"
+                      max={videoProgress.duration || 100}
+                      step="0.5"
+                      value={videoProgress.currentTime || 0}
+                      onChange={(e) => videoEngine.seekTo(parseFloat(e.target.value))}
+                      className="w-full accent-purple-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+                    />
+                  </div>
+
+                  <div className="flex items-center justify-between gap-3 pt-1">
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleTogglePlayPauseVideo}
+                        className="px-4 py-1.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 shadow cursor-pointer transition-colors"
+                      >
+                        {videoProgress.playbackState === 'playing' ? (
+                          <>
+                            <Pause className="w-4 h-4 fill-current" />
+                            <span>Pause</span>
+                          </>
+                        ) : (
+                          <>
+                            <Play className="w-4 h-4 fill-current ml-0.5" />
+                            <span>Play</span>
+                          </>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleStopVideo}
+                        className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+                        title="Stop Video"
+                      >
+                        <Square className="w-4 h-4 fill-current text-rose-400" />
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="flex items-center gap-1.5">
+                        <Volume2 className="w-4 h-4 text-slate-400" />
+                        <input
+                          type="range"
+                          min="0"
+                          max="100"
+                          value={videoProgress.volume}
+                          onChange={(e) => videoEngine.setVolume(parseInt(e.target.value, 10))}
+                          className="w-20 accent-purple-500 cursor-pointer h-1 bg-slate-800 rounded"
+                        />
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={handleToggleVideoFullscreen}
+                        className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-medium flex items-center gap-1.5 cursor-pointer shadow transition-colors"
+                        title="Exit Fullscreen (Esc)"
+                      >
+                        <Minimize2 className="w-3.5 h-3.5" />
+                        <span>Exit</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Dedicated Video Controls Bar in Normal View Mode (Positioned neatly below screen) */}
+            {!isVideoFullscreen && currentVideoTrack && (
+              <div className="p-4 rounded-2xl bg-slate-950/70 border border-slate-800/80 backdrop-blur-md space-y-3">
+                {/* Seek Bar */}
+                <div className="space-y-1">
+                  <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
+                    <span>{formatTime(videoProgress.currentTime)}</span>
+                    <span className="text-[10px] text-slate-500 font-sans">
+                      Double-click screen or click Fullscreen to expand
+                    </span>
+                    <span>{formatTime(videoProgress.duration)}</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max={videoProgress.duration || 100}
+                    step="0.5"
+                    value={videoProgress.currentTime || 0}
+                    onChange={(e) => videoEngine.seekTo(parseFloat(e.target.value))}
+                    className="w-full accent-purple-500 cursor-pointer h-1.5 bg-slate-800 rounded-lg"
+                  />
+                </div>
+
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={handleTogglePlayPauseVideo}
+                      className="px-4 py-2 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-bold text-xs flex items-center gap-1.5 shadow cursor-pointer transition-colors"
+                    >
+                      {videoProgress.playbackState === 'playing' ? (
+                        <>
+                          <Pause className="w-4 h-4 fill-current" />
+                          <span>Pause</span>
+                        </>
+                      ) : (
+                        <>
+                          <Play className="w-4 h-4 fill-current ml-0.5" />
+                          <span>Play</span>
+                        </>
+                      )}
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleStopVideo}
+                      className="p-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white cursor-pointer"
+                      title="Stop Video"
+                    >
+                      <Square className="w-4 h-4 fill-current text-rose-400" />
+                    </button>
+
+                    <span className="text-xs font-semibold text-slate-300 truncate max-w-xs ml-2">
+                      {currentVideoTrack.name}
+                    </span>
+                  </div>
+
+                  {/* Volume Slider & Fullscreen Toggle */}
+                  <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-1.5">
+                      <Volume2 className="w-4 h-4 text-slate-400" />
+                      <input
+                        type="range"
+                        min="0"
+                        max="100"
+                        value={videoProgress.volume}
+                        onChange={(e) => videoEngine.setVolume(parseInt(e.target.value, 10))}
+                        className="w-20 accent-purple-500 cursor-pointer h-1 bg-slate-800 rounded"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleToggleVideoFullscreen}
+                      className="px-3 py-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 hover:text-white text-xs font-medium flex items-center gap-1.5 cursor-pointer shadow transition-colors"
+                      title="Enter Fullscreen"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                      <span>Fullscreen</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Video Library List */}
           <div
             className="p-5 sm:p-6 rounded-2xl border border-slate-800/80 bg-slate-900/60 backdrop-blur-md shadow-xl"
             style={panelBgStyle}
           >
-            <h3 className="text-sm font-bold text-white uppercase tracking-wider font-mono mb-4">
-              Saved Streams &amp; Playlists
-            </h3>
+            <h4 className="text-xs font-bold text-slate-300 uppercase tracking-wider font-mono mb-3">
+              Imported Video Songs Library ({localVideoTracks.length})
+            </h4>
 
-            <div className="space-y-4">
-              {/* YouTube Saved Items */}
-              <div>
-                <h4 className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5">
-                  <Youtube className="w-3.5 h-3.5 text-red-500" />
-                  <span>YouTube Streams ({audio.youtubeItems?.length || 0})</span>
-                </h4>
+            {localVideoTracks.length === 0 ? (
+              <div className="p-8 rounded-2xl border border-dashed border-slate-800 text-center text-slate-400 text-xs">
+                <Film className="w-8 h-8 text-slate-600 mx-auto mb-2" />
+                <span>No local video songs imported yet. Click &quot;Import Video Files&quot; above to add MP4 songs.</span>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                {localVideoTracks.map((video) => {
+                  const isPlaying = audio.activeVideoTrackId === video.id && isVideoActive;
 
-                {(audio.youtubeItems || []).length === 0 ? (
-                  <p className="text-xs text-slate-500 italic">No custom YouTube streams saved yet.</p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {audio.youtubeItems?.map((item) => (
-                      <div
-                        key={item.id}
-                        className="p-3 rounded-xl border border-slate-800 bg-slate-950/60 flex items-center justify-between gap-2"
-                      >
-                        <button
-                          type="button"
-                          onClick={() =>
-                            onUpdateAudio({
-                              activeYouTubeId: item.embedId,
-                              activeSpotifyUri: null,
-                              activeSource: 'youtube',
-                              isPlaying: true,
-                            })
-                          }
-                          className="flex items-center gap-2 min-w-0 text-left cursor-pointer flex-1"
-                        >
-                          <Play className="w-3.5 h-3.5 text-red-400 shrink-0 fill-current" />
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold text-white truncate">
-                              {item.title}
-                            </div>
-                            <div className="text-[10px] text-slate-500 font-mono">
-                              {item.type.toUpperCase()}
-                            </div>
-                          </div>
-                        </button>
+                  return (
+                    <div
+                      key={video.id}
+                      className={`p-3.5 rounded-xl border flex flex-col justify-between transition-colors ${
+                        isPlaying
+                          ? 'border-purple-500/60 bg-purple-500/10 shadow'
+                          : 'border-slate-800 bg-slate-950/60 hover:bg-slate-900'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-2">
+                        <div className="min-w-0">
+                          <span className="text-[10px] font-mono uppercase font-bold text-purple-400 px-1.5 py-0.5 rounded bg-purple-500/20">
+                            {video.format ? video.format.toUpperCase() : 'MP4'}
+                          </span>
+                          <h5 className="text-xs font-bold text-white mt-1.5 truncate">
+                            {video.name}
+                          </h5>
+                          <p className="text-[10px] text-slate-500 font-mono truncate mt-0.5">
+                            {video.filePath || 'Local Video Song'}
+                          </p>
+                        </div>
 
                         <button
                           type="button"
                           onClick={() => {
-                            const next = (audio.youtubeItems || []).filter((y) => y.id !== item.id);
-                            onUpdateAudio({ youtubeItems: next });
+                            soundEngine.playUiClick();
+                            const next = (audio.videoTracks || []).filter((v) => v.id !== video.id);
+                            const nextCustom = (audio.customTracks || []).filter((v) => v.id !== video.id);
+                            onUpdateAudio({ videoTracks: next, customTracks: nextCustom });
                           }}
-                          className="p-1 rounded text-slate-500 hover:text-rose-400 cursor-pointer"
-                          title="Remove saved stream"
+                          className="text-slate-500 hover:text-rose-400 p-1 cursor-pointer"
+                          title="Remove from video songs"
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
                       </div>
-                    ))}
-                  </div>
-                )}
-              </div>
 
-              {/* Spotify Saved Items */}
-              <div className="pt-2 border-t border-slate-800/80">
-                <h4 className="text-xs font-semibold text-slate-400 mb-2 flex items-center gap-1.5">
-                  <Radio className="w-3.5 h-3.5 text-emerald-400" />
-                  <span>Spotify Playlists ({audio.spotifyItems?.length || 0})</span>
-                </h4>
-
-                {(audio.spotifyItems || []).length === 0 ? (
-                  <p className="text-xs text-slate-500 italic">No custom Spotify playlists saved yet.</p>
-                ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-                    {audio.spotifyItems?.map((item) => (
-                      <div
-                        key={item.id}
-                        className="p-3 rounded-xl border border-slate-800 bg-slate-950/60 flex items-center justify-between gap-2"
-                      >
+                      <div className="mt-4 pt-2.5 border-t border-slate-800/80 flex items-center justify-between">
                         <button
                           type="button"
-                          onClick={() =>
-                            onUpdateAudio({
-                              activeSpotifyUri: item.embedUri,
-                              activeYouTubeId: null,
-                              activeSource: 'spotify',
-                              isPlaying: true,
-                            })
-                          }
-                          className="flex items-center gap-2 min-w-0 text-left cursor-pointer flex-1"
+                          onClick={() => handlePlayVideoTrack(video)}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center gap-1.5 cursor-pointer ${
+                            isPlaying
+                              ? 'bg-purple-600 text-white'
+                              : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                          }`}
                         >
-                          <Play className="w-3.5 h-3.5 text-emerald-400 shrink-0 fill-current" />
-                          <div className="min-w-0">
-                            <div className="text-xs font-semibold text-white truncate">
-                              {item.title}
-                            </div>
-                            <div className="text-[10px] text-slate-500 font-mono">
-                              {item.type.toUpperCase()}
-                            </div>
-                          </div>
+                          <Play className="w-3 h-3 fill-current" />
+                          <span>{isPlaying ? 'Playing on Screen' : 'Play Video'}</span>
                         </button>
 
-                        <button
-                          type="button"
-                          onClick={() => {
-                            const next = (audio.spotifyItems || []).filter((s) => s.id !== item.id);
-                            onUpdateAudio({ spotifyItems: next });
-                          }}
-                          className="p-1 rounded text-slate-500 hover:text-rose-400 cursor-pointer"
-                          title="Remove saved playlist"
-                        >
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
+                        <span className="text-[11px] font-mono text-slate-500">
+                          {video.fileSize ? `${(video.fileSize / (1024 * 1024)).toFixed(1)} MB` : 'Local File'}
+                        </span>
                       </div>
-                    ))}
-                  </div>
-                )}
+                    </div>
+                  );
+                })}
               </div>
-            </div>
+            )}
           </div>
         </div>
       )}

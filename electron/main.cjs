@@ -8,9 +8,39 @@ const {
   ipcMain,
   nativeImage,
   shell,
+  protocol,
+  net,
+  dialog,
+  session,
+  globalShortcut,
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const url = require('url');
+
+// 1. Register custom scheme privileges before app is ready
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'local-audio',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true, // Crucial for audio seeking and range requests
+      bypassCSP: true,
+    },
+  },
+  {
+    scheme: 'local-video',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true, // Crucial for video seeking and range requests
+      bypassCSP: true,
+    },
+  },
+]);
 
 // Set application name and Windows AppUserModelID before app ready
 app.setName('Habitra');
@@ -152,6 +182,13 @@ function createTray() {
           sendToRenderer('habitra-tray-action', 'start_focus');
         },
       },
+      {
+        label: 'Quick Desktop Widget (Ctrl+Shift+H)',
+        click: () => {
+          showAndFocusMainWindow();
+          sendToRenderer('habitra-tray-action', 'toggle_widget');
+        },
+      },
       { type: 'separator' },
       {
         label: 'Pause Notifications',
@@ -232,13 +269,29 @@ function createWindow() {
     }
   });
 
-  // Open external http/https links in the user's default system browser
-  mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    if (url.startsWith('http://') || url.startsWith('https://')) {
-      shell.openExternal(url).catch(() => {});
+  // Open external links (YouTube, Spotify, etc.) in user's default system browser / native app
+  mainWindow.webContents.setWindowOpenHandler(({ url: targetUrl }) => {
+    if (
+      targetUrl.startsWith('http://') ||
+      targetUrl.startsWith('https://') ||
+      targetUrl.startsWith('spotify:')
+    ) {
+      shell.openExternal(targetUrl).catch(() => {});
       return { action: 'deny' };
     }
     return { action: 'allow' };
+  });
+
+  // Native fullscreen handling for embedded players
+  mainWindow.webContents.on('enter-html-full-screen', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setFullScreen(true);
+    }
+  });
+  mainWindow.webContents.on('leave-html-full-screen', () => {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setFullScreen(false);
+    }
   });
 
   // Only allow ELECTRON_START_URL in unpackaged local development mode
@@ -262,6 +315,205 @@ function createWindow() {
     mainWindow = null;
   });
 }
+
+// 2. Setup YouTube Referrer & Origin Injection to eliminate Error 153 in Electron
+function configureWebRequestSecurity() {
+  session.defaultSession.webRequest.onBeforeSendHeaders((details, callback) => {
+    const reqUrl = details.url || '';
+    if (
+      reqUrl.includes('youtube.com') ||
+      reqUrl.includes('youtube-nocookie.com') ||
+      reqUrl.includes('googlevideo.com')
+    ) {
+      details.requestHeaders['Referer'] = 'https://www.youtube.com/';
+      details.requestHeaders['Origin'] = 'https://www.youtube.com';
+    }
+    callback({ cancel: false, requestHeaders: details.requestHeaders });
+  });
+}
+
+// 3. Register 'local-audio' streaming protocol handler
+function configureLocalAudioProtocol() {
+  protocol.handle('local-audio', (request) => {
+    try {
+      const raw = request.url.slice('local-audio://'.length);
+      const decoded = decodeURIComponent(raw);
+      // Clean path in Windows (e.g. /C:/Users/... -> C:/Users/... or C/Users/... -> C:/Users/...)
+      let cleanPath = decoded.replace(/^\/([a-zA-Z]:)/, '$1');
+      if (/^[a-zA-Z]\//.test(cleanPath)) {
+        cleanPath = cleanPath[0] + ':/' + cleanPath.slice(2);
+      }
+      const normalized = path.normalize(cleanPath);
+
+      if (!fs.existsSync(normalized)) {
+        return new Response('Audio file not found on local filesystem', { status: 404 });
+      }
+
+      const fileUrl = url.pathToFileURL(normalized).toString();
+      return net.fetch(fileUrl);
+    } catch (err) {
+      return new Response(String(err), { status: 500 });
+    }
+  });
+}
+
+// Register 'local-video' streaming protocol handler
+function configureLocalVideoProtocol() {
+  protocol.handle('local-video', (request) => {
+    try {
+      const raw = request.url.slice('local-video://'.length);
+      const decoded = decodeURIComponent(raw);
+      // Clean path in Windows (e.g. /C:/Users/... -> C:/Users/... or C/Users/... -> C:/Users/...)
+      let cleanPath = decoded.replace(/^\/([a-zA-Z]:)/, '$1');
+      if (/^[a-zA-Z]\//.test(cleanPath)) {
+        cleanPath = cleanPath[0] + ':/' + cleanPath.slice(2);
+      }
+      const normalized = path.normalize(cleanPath);
+
+      if (!fs.existsSync(normalized)) {
+        return new Response('Video file not found on local filesystem', { status: 404 });
+      }
+
+      const fileUrl = url.pathToFileURL(normalized).toString();
+      return net.fetch(fileUrl);
+    } catch (err) {
+      return new Response(String(err), { status: 500 });
+    }
+  });
+}
+
+// 4. Native Dialog IPC Handlers for Local Music & Video
+ipcMain.handle('habitra-open-video-dialog', async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return [];
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select Video Songs for Habitra Library',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      {
+        name: 'Video Files (*.mp4, *.webm, *.mkv, *.mov)',
+        extensions: ['mp4', 'webm', 'mkv', 'mov'],
+      },
+    ],
+  });
+
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+    return [];
+  }
+
+  return result.filePaths.map((filePath) => {
+    const baseName = path.basename(filePath);
+    const ext = path.extname(filePath).replace(/^\./, '').toLowerCase();
+    const cleanName = baseName.replace(/\.[^/.]+$/, '');
+    let size = 0;
+    try {
+      size = fs.statSync(filePath).size;
+    } catch {}
+    return {
+      filePath,
+      name: cleanName,
+      ext,
+      size,
+    };
+  });
+});
+
+ipcMain.handle('habitra-open-audio-dialog', async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return [];
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select Audio Files for Habitra Library',
+    properties: ['openFile', 'multiSelections'],
+    filters: [
+      {
+        name: 'Audio Files (*.mp3, *.wav, *.ogg, *.flac, *.m4a, *.aac)',
+        extensions: ['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac'],
+      },
+    ],
+  });
+
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+    return [];
+  }
+
+  return result.filePaths.map((filePath) => {
+    const baseName = path.basename(filePath);
+    const ext = path.extname(filePath).replace(/^\./, '').toLowerCase();
+    const cleanName = baseName.replace(/\.[^/.]+$/, '');
+    let size = 0;
+    try {
+      size = fs.statSync(filePath).size;
+    } catch {}
+    return {
+      filePath,
+      name: cleanName,
+      ext,
+      size,
+    };
+  });
+});
+
+ipcMain.handle('habitra-open-audio-folder-dialog', async () => {
+  if (!mainWindow || mainWindow.isDestroyed()) return [];
+  const result = await dialog.showOpenDialog(mainWindow, {
+    title: 'Select Folder Containing Music Files',
+    properties: ['openDirectory'],
+  });
+
+  if (result.canceled || !result.filePaths || result.filePaths.length === 0) {
+    return [];
+  }
+
+  const folderPath = result.filePaths[0];
+  const folderName = path.basename(folderPath);
+  const audioExts = new Set(['mp3', 'wav', 'ogg', 'flac', 'm4a', 'aac']);
+  const tracks = [];
+
+  try {
+    const entries = fs.readdirSync(folderPath, { withFileTypes: true });
+    for (const entry of entries) {
+      if (!entry.isFile()) continue;
+      const ext = path.extname(entry.name).replace(/^\./, '').toLowerCase();
+      if (audioExts.has(ext)) {
+        const filePath = path.join(folderPath, entry.name);
+        const cleanName = entry.name.replace(/\.[^/.]+$/, '');
+        let size = 0;
+        try {
+          size = fs.statSync(filePath).size;
+        } catch {}
+        tracks.push({
+          filePath,
+          name: cleanName,
+          ext,
+          size,
+          folderName,
+        });
+      }
+    }
+  } catch {}
+
+  return tracks;
+});
+
+ipcMain.handle('habitra-check-file-exists', async (_event, filePath) => {
+  if (typeof filePath !== 'string' || !filePath) return false;
+  return fs.existsSync(filePath);
+});
+
+ipcMain.handle('habitra-open-external', async (_event, rawUrl) => {
+  if (
+    typeof rawUrl === 'string' &&
+    (rawUrl.startsWith('http://') ||
+      rawUrl.startsWith('https://') ||
+      rawUrl.startsWith('spotify:'))
+  ) {
+    try {
+      await shell.openExternal(rawUrl);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+  return false;
+});
 
 // Read bundled music manifest & discover audio files in dist/music or public/music
 ipcMain.handle('habitra-get-music-manifest', async () => {
@@ -355,8 +607,20 @@ ipcMain.on('habitra-native-notification', (_event, payload) => {
 
 app.whenReady().then(() => {
   if (gotTheLock) {
+    configureLocalAudioProtocol();
+    configureLocalVideoProtocol();
+    configureWebRequestSecurity();
     createWindow();
     createTray();
+
+    try {
+      globalShortcut.register('CommandOrControl+Shift+H', () => {
+        showAndFocusMainWindow();
+        sendToRenderer('habitra-tray-action', 'toggle_widget');
+      });
+    } catch {
+      // Ignore if shortcut registration failed
+    }
   }
 });
 
@@ -370,6 +634,13 @@ app.on('window-all-closed', () => {
   }
 });
 
+app.on('will-quit', () => {
+  try {
+    globalShortcut.unregisterAll();
+  } catch {}
+});
+
 app.on('before-quit', () => {
   isQuitting = true;
 });
+

@@ -29,6 +29,7 @@ import {
   isHabitCompleted,
   OverallDashboardStats,
 } from '../utils/habitStats';
+import { HabitTactileBeadChain } from './HabitTactileBeadChain';
 
 interface LivingWorldSanctuaryProps {
   habits: Habit[];
@@ -62,6 +63,7 @@ interface LivingWorldSanctuaryProps {
   onLogWaterCup: () => void;
   onNavigateTab: (tab: NavigationTab) => void;
   onOpenCameraForHabit?: (habitId?: string) => void;
+  onOpenFocusPortal?: () => void;
   onLoadStarterPack?: () => void;
 }
 
@@ -93,7 +95,7 @@ export function computeWorldStage(
       focusRatio * 15 +
       streakBonus * 0.5
   );
-  const vitalityPercent = Math.max(12, Math.min(100, rawVitality));
+  const vitalityPercent = Math.max(0, Math.min(100, rawVitality));
 
   const compositeScore = vitalityPercent + xpLevel * 8 + currentStreak * 3;
 
@@ -235,6 +237,7 @@ export const LivingWorldSanctuary: React.FC<LivingWorldSanctuaryProps> = ({
   onLogWaterCup,
   onNavigateTab,
   onOpenCameraForHabit,
+  onOpenFocusPortal,
 }) => {
   const [recentlyWateredId, setRecentlyWateredId] = useState<string | null>(null);
 
@@ -380,6 +383,19 @@ export const LivingWorldSanctuary: React.FC<LivingWorldSanctuaryProps> = ({
                   : 'Hotspots Off'}
               </span>
             </button>
+
+            {/* Enter Deep Focus Portal Button */}
+            {onOpenFocusPortal && (
+              <button
+                type="button"
+                onClick={onOpenFocusPortal}
+                className="px-3 py-1.5 rounded-xl bg-indigo-500/15 hover:bg-indigo-500/25 border border-indigo-400/35 text-indigo-200 text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer whitespace-nowrap"
+                title="Transition Sanctuary into Deep Focus Zen Portal"
+              >
+                <Timer className="w-3.5 h-3.5 text-indigo-400" />
+                <span>Focus Portal</span>
+              </button>
+            )}
           </div>
         </div>
       </section>
@@ -603,6 +619,17 @@ export const LivingWorldSanctuary: React.FC<LivingWorldSanctuaryProps> = ({
                           />
                         </div>
                       </div>
+
+                      {/* Tactile 7-Day Bead Chain & Organic Bloom */}
+                      <HabitTactileBeadChain
+                        habitId={habit.id}
+                        habitName={habit.name}
+                        completions={completions}
+                        selectedDate={selectedDate}
+                        reducedMotion={styleSettings.reducedMotion}
+                        accentColor={habit.color || styleSettings.accentColor}
+                        onToggleDate={onToggleHabitCompletion}
+                      />
 
                       {/* Bottom Metadata & Quick Camera / Inspect / Edit */}
                       <div className="flex items-center justify-between gap-2 mt-2.5 text-[11px] text-slate-400">

@@ -19,6 +19,21 @@ contextBridge.exposeInMainWorld('habitraDesktop', {
   getMusicManifest: () => {
     return ipcRenderer.invoke('habitra-get-music-manifest').catch(() => null);
   },
+  openAudioFilesDialog: () => {
+    return ipcRenderer.invoke('habitra-open-audio-dialog').catch(() => []);
+  },
+  openVideoFilesDialog: () => {
+    return ipcRenderer.invoke('habitra-open-video-dialog').catch(() => []);
+  },
+  openAudioFolderDialog: () => {
+    return ipcRenderer.invoke('habitra-open-audio-folder-dialog').catch(() => []);
+  },
+  openExternal: (url) => {
+    return ipcRenderer.invoke('habitra-open-external', url).catch(() => false);
+  },
+  checkFileExists: (filePath) => {
+    return ipcRenderer.invoke('habitra-check-file-exists', filePath).catch(() => false);
+  },
   onTrayAction: (callback) => {
     if (typeof callback !== 'function') return () => {};
     const listener = (_event, action) => callback(action);

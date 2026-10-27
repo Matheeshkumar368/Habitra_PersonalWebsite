@@ -27,6 +27,7 @@ import {
   BUILTIN_MUSIC_TRACKS,
   PIXEL_SCENES,
 } from '../constants/scenesAndPresets';
+import { saveAudioBlob } from '../db/indexedDb';
 import {
   AmbientSoundId,
   AudioSettings,
@@ -229,12 +230,8 @@ export const RightWorkspaceColumn: React.FC<RightWorkspaceColumnProps> = ({
         }
 
         try {
-          const dataUrl = await new Promise<string>((resolve, reject) => {
-            const reader = new FileReader();
-            reader.onload = () => resolve(String(reader.result || ''));
-            reader.onerror = () => reject(reader.error);
-            reader.readAsDataURL(file);
-          });
+          const trackId = `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+          await saveAudioBlob(trackId, file);
 
           const relPath = (file as File & { webkitRelativePath?: string })
             .webkitRelativePath;
@@ -245,11 +242,14 @@ export const RightWorkspaceColumn: React.FC<RightWorkspaceColumnProps> = ({
           const isVideo =
             file.type.startsWith('video/') ||
             /\.(mp4|mov|m4v|webm)$/i.test(file.name);
+          const ext = file.name.split('.').pop()?.toLowerCase();
 
           newTracks.push({
-            id: `custom_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            id: trackId,
             name: cleanName,
-            dataUrl,
+            blobKey: trackId,
+            fileSize: file.size,
+            format: ext,
             mediaType: isVideo ? 'video' : 'audio',
             category: 'custom',
             folderName,

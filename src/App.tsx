@@ -33,8 +33,28 @@ import {
   Pause,
   RotateCcw,
   SkipForward,
+  Layers,
+  ArrowRight,
+  Droplets,
+  Radio,
+  Volume2,
+  VolumeX,
+  Sliders,
+  DollarSign,
+  History,
+  TrendingUp,
 } from 'lucide-react';
 import { soundEngine } from './audio/soundEngine';
+import { videoEngine } from './audio/videoEngine';
+import { AppsHubView } from './components/AppsHubView';
+import { FinsaStudioView } from './components/finsa/FinsaStudioView';
+import { FixedDesktopMediaBar } from './components/FixedDesktopMediaBar';
+import { CalendarApplicationView } from './components/CalendarApplicationView';
+import { DesktopQuickWidget } from './components/DesktopQuickWidget';
+import { PersonalDailyBrief } from './components/PersonalDailyBrief';
+import { AdaptiveWorkspaceModes } from './components/AdaptiveWorkspaceModes';
+import { PersonalActivityTimeline } from './components/PersonalActivityTimeline';
+import { PersonalInsightsView } from './components/PersonalInsightsView';
 import { CustomizeSpaceView } from './components/CustomizeSpaceView';
 import { DailyCameraUpdateView } from './components/DailyCameraUpdateView';
 import { HabitCalendarSection } from './components/HabitCalendarSection';
@@ -42,6 +62,7 @@ import {
   computeWorldStage,
   LivingWorldSanctuary,
 } from './components/LivingWorldSanctuary';
+import { SpatialFocusPortal } from './components/SpatialFocusPortal';
 import {
   AmbientModeOverlay,
   GoalFormModal,
@@ -50,7 +71,9 @@ import {
   ReminderFormModal,
 } from './components/Modals';
 import { HabitraLogo } from './components/HabitraLogo';
-import { HabitraIntroVideo } from './components/HabitraIntroVideo';
+import { HabitraLoadingScreen } from './components/HabitraLoadingScreen';
+import { UnifiedDailyTimeline } from './components/UnifiedDailyTimeline';
+import { HabitraSetupWizard } from './components/HabitraSetupWizard';
 import { PersistentStreamingPlayer } from './components/PersistentStreamingPlayer';
 import { CsvHabitImportModal } from './components/CsvHabitImportModal';
 import { MusicPlayerView } from './components/MusicPlayerView';
@@ -73,6 +96,7 @@ import {
   NotificationCenterModal,
   SystemTrayBackgroundOverlay,
 } from './components/SystemOverlays';
+import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import {
   BUILTIN_MUSIC_TRACKS,
   createDefaultAppState,
@@ -80,7 +104,16 @@ import {
   formatLocalYMD,
   PIXEL_SCENES,
   ROOM_OBJECT_CATALOG,
+  DEFAULT_APP_SHORTCUTS,
+  DEFAULT_WIDGET_SETTINGS,
+  DEFAULT_STYLE_SETTINGS,
 } from './constants/scenesAndPresets';
+import {
+  createDefaultFinsaState,
+  formatCents,
+  calculateNetWorth,
+} from './services/finsaEngine';
+import { FinsaState } from './types/finsa';
 import {
   clearAllAppDataInDB,
   createVersionedBackupSnapshot,
@@ -178,15 +211,21 @@ export function App() {
   const [reminderModalOpen, setReminderModalOpen] = useState(false);
   const [editingReminder, setEditingReminder] = useState<Reminder | null>(null);
   const [securityModalOpen, setSecurityModalOpen] = useState(false);
-  const [introVideoOpen, setIntroVideoOpen] = useState(false);
+  const [setupWizardOpen, setSetupWizardOpen] = useState(false);
+  const [quickWidgetOpen, setQuickWidgetOpen] = useState(false);
+  const [profileCompletionOpen, setProfileCompletionOpen] = useState(false);
+  const [profileCompletionName, setProfileCompletionName] = useState('');
 
-  // New Overlays: Command Palette (Ctrl+K), Notification Center, Daily Journal, System Tray Mode
+  // New Overlays: Command Palette (Ctrl+K), Notification Center, Daily Journal, Shortcuts, System Tray Mode
   const [commandPaletteOpen, setCommandPaletteOpen] = useState(false);
+  const [shortcutsModalOpen, setShortcutsModalOpen] = useState(false);
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
   const [journalModalOpen, setJournalModalOpen] = useState(false);
   const [journalDateStr, setJournalDateStr] = useState<string | undefined>(
     undefined
   );
+  const [sanctuaryControlsOpen, setSanctuaryControlsOpen] = useState(false);
+  const [quickCaptureInput, setQuickCaptureInput] = useState('');
   const [isMinimizedToTray, setIsMinimizedToTray] = useState(false);
   const [showFirstTimeTrayToast, setShowFirstTimeTrayToast] = useState(false);
   const [missedReminders, setMissedReminders] = useState<MissedReminderItem[]>(
@@ -208,6 +247,7 @@ export function App() {
   const [timerBannerMessage, setTimerBannerMessage] = useState<string | null>(
     null
   );
+  const [isSpatialFocusActive, setIsSpatialFocusActive] = useState(false);
 
   // Streak celebration toast
   const [streakToast, setStreakToast] = useState<string | null>(null);
@@ -254,6 +294,108 @@ export function App() {
       );
     };
   }, []);
+
+  // Global Keyboard Shortcuts Controller for Desktop Precision
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement | null;
+      const isInput =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable);
+
+      // Ctrl+K / Cmd+K: Open Universal Command Palette
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault();
+        setCommandPaletteOpen((prev) => !prev);
+        return;
+      }
+
+      // Escape: Close all active modals & floating overlays
+      if (e.key === 'Escape') {
+        setCommandPaletteOpen(false);
+        setShortcutsModalOpen(false);
+        setQuickWidgetOpen(false);
+        setMobileMenuOpen(false);
+        setShowSearchBar(false);
+        return;
+      }
+
+      if (isInput) return;
+
+      // Space: Toggle Audio / Video Playback
+      if (e.code === 'Space') {
+        e.preventDefault();
+        handleUpdateAudio({ isPlaying: !appState.audio.isPlaying });
+        return;
+      }
+
+      // F: Toggle Full-Screen Ambient Sanctuary Mode
+      if (e.key === 'f' || e.key === 'F') {
+        e.preventDefault();
+        setAmbientModeOpen((prev) => !prev);
+        return;
+      }
+
+      // T: Toggle Focus Timer
+      if (e.key === 't' || e.key === 'T') {
+        e.preventDefault();
+        handleStartPauseTimer();
+        return;
+      }
+
+      // ? or /: Open Keyboard Shortcuts Sheet
+      if (e.key === '?' || (e.shiftKey && e.key === '/')) {
+        e.preventDefault();
+        setShortcutsModalOpen(true);
+        return;
+      }
+
+      // M: Toggle Audio Mute
+      if (e.key === 'm' || e.key === 'M') {
+        e.preventDefault();
+        handleUpdateAudio({ isMuted: !appState.audio.isMuted });
+        return;
+      }
+
+      // N: New Habit Modal
+      if (e.key === 'n' || e.key === 'N') {
+        e.preventDefault();
+        setEditingHabit(null);
+        setHabitModalOpen(true);
+        return;
+      }
+
+      // W: Toggle Desktop Floating Quick Widget
+      if (e.key === 'w' || e.key === 'W') {
+        e.preventDefault();
+        setQuickWidgetOpen((prev) => !prev);
+        return;
+      }
+
+      // Direct Tab Navigation (1 through 9)
+      const tabKeyMap: Record<string, NavigationTab> = {
+        '1': 'dashboard',
+        '2': 'habits',
+        '3': 'calendar',
+        '4': 'goals',
+        '5': 'timer',
+        '6': 'music',
+        '7': 'finsa',
+        '8': 'statistics',
+        '9': 'settings',
+      };
+      if (tabKeyMap[e.key]) {
+        e.preventDefault();
+        handleSelectTab(tabKeyMap[e.key]);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [appState.audio.isPlaying, appState.audio.isMuted]);
 
   // Load initial state from IndexedDB on mount + Epoch Timestamp Timer Recovery + Missed Reminders Check
   useEffect(() => {
@@ -328,11 +470,18 @@ export function App() {
           currentActiveDateStr: formatLocalYMD(now),
         },
       });
-      const sessionIntroPlayed =
-        typeof sessionStorage !== 'undefined' &&
-        sessionStorage.getItem('habitra_intro_played');
-      if (!sessionIntroPlayed && state.audio?.playIntroOnStartup !== false) {
-        setIntroVideoOpen(true);
+      // Detect genuine first-time installation vs returning installation with preserved data
+      const isReturningUser =
+        Boolean(state.profile.hasSeenWelcome) ||
+        (Array.isArray(state.habits) && state.habits.length > 0) ||
+        (Array.isArray(state.goals) && state.goals.length > 0) ||
+        Boolean(state.security?.passwordHash) ||
+        (Array.isArray(state.audio?.customTracks) && state.audio.customTracks.length > 0);
+
+      if (!isReturningUser) {
+        setSetupWizardOpen(true);
+      } else if (!state.profile.userName?.trim()) {
+        setProfileCompletionOpen(true);
       }
       setIsLoaded(true);
     });
@@ -634,6 +783,73 @@ export function App() {
           }));
         }
       }
+
+      // 3b. Dedicated Posture & Stretch Interval Check
+      if (
+        appState.profile.notifyPosture !== false &&
+        (appState.profile.postureIntervalMinutes ?? 45) > 0
+      ) {
+        const intervalMs = (appState.profile.postureIntervalMinutes ?? 45) * 60 * 1000;
+        const lastPosture = appState.profile.lastPostureReminderAt || nowMs;
+        if (nowMs - lastPosture >= intervalMs) {
+          if (appState.profile.notificationSoundEnabled) {
+            soundEngine.playReminderChime();
+          }
+          sendDesktopNotification(
+            '🧘 POSTURE & STRETCH',
+            'Time to adjust your posture, roll your shoulders, and take a quick stretch.',
+            'exercise',
+            '🧘'
+          );
+          setAppState((prev) => ({
+            ...prev,
+            profile: {
+              ...prev.profile,
+              lastPostureReminderAt: nowMs,
+            },
+          }));
+        }
+      }
+
+      // 3c. Calendar Events Scheduled Reminders
+      (appState.calendarEvents || []).forEach((ev) => {
+        if (!ev.startTime || ev.allDay || ev.reminderMinutesBefore === undefined || ev.reminderMinutesBefore < 0)
+          return;
+        if (ev.date !== todayStr) return;
+
+        const [eventH, eventM] = ev.startTime.split(':').map(Number);
+        if (isNaN(eventH) || isNaN(eventM)) return;
+        const eventTotalMins = eventH * 60 + eventM;
+        const reminderTriggerMins = eventTotalMins - ev.reminderMinutesBefore;
+        if (reminderTriggerMins < 0) return;
+
+        const remH = Math.floor(reminderTriggerMins / 60);
+        const remM = reminderTriggerMins % 60;
+        const remHM = `${String(remH).padStart(2, '0')}:${String(remM).padStart(2, '0')}`;
+
+        if (remHM === currentHM) {
+          const lastReminded = ev.lastRemindedTimestamp || 0;
+          if (nowMs - lastReminded >= 65_000) {
+            if (appState.profile.notificationSoundEnabled) {
+              soundEngine.playReminderChime();
+            }
+            sendDesktopNotification(
+              `📅 CALENDAR: ${ev.title.toUpperCase()}`,
+              ev.reminderMinutesBefore === 0
+                ? `Event "${ev.title}" is starting now.`
+                : `Upcoming in ${ev.reminderMinutesBefore} minutes: "${ev.title}".`,
+              'system',
+              '📅'
+            );
+            setAppState((prev) => ({
+              ...prev,
+              calendarEvents: (prev.calendarEvents || []).map((e) =>
+                e.id === ev.id ? { ...e, lastRemindedTimestamp: nowMs } : e
+              ),
+            }));
+          }
+        }
+      });
 
       // 4. Custom & Scheduled Reminders Check
       appState.reminders.forEach((rem) => {
@@ -1252,6 +1468,40 @@ export function App() {
     }));
   };
 
+  const handleRestoreInterfaceDefaults = () => {
+    soundEngine.playSaveSuccess();
+    setAppState((prev) => ({
+      ...prev,
+      style: {
+        ...DEFAULT_STYLE_SETTINGS,
+      },
+      profile: {
+        ...prev.profile,
+        workspaceMode: 'daily_life',
+        defaultWorkspaceMode: 'daily_life',
+        layoutSpacing: 'comfortable',
+        mediaBarPosition: 'bottom_fixed',
+        uiSoundEnabled: true,
+        uiSoundVolume: 20,
+        lastSavedAt: stampSaveTime(),
+      },
+      widgetSettings: {
+        ...DEFAULT_WIDGET_SETTINGS,
+      },
+    }));
+  };
+
+  const handleUpdateFinsa = (patch: Partial<FinsaState>) => {
+    setAppState((prev) => ({
+      ...prev,
+      finsa: {
+        ...(prev.finsa || createDefaultFinsaState()),
+        ...patch,
+      },
+      profile: { ...prev.profile, lastSavedAt: stampSaveTime() },
+    }));
+  };
+
   const handleUpdateAudio = (patch: Partial<AudioSettings>) => {
     if (
       patch.isPlaying !== undefined &&
@@ -1265,6 +1515,34 @@ export function App() {
     ) {
       soundEngine.playMediaAction('skip');
     }
+
+    // Coordinated single-source isolation:
+    // When one source starts, strictly pause/clear other sources
+    if (patch.activeSource === 'youtube') {
+      soundEngine.pauseAllPlayback();
+      videoEngine.pause();
+      patch.activeSpotifyUri = null;
+      patch.activeVideoTrackId = null;
+    } else if (patch.activeSource === 'spotify') {
+      soundEngine.pauseAllPlayback();
+      videoEngine.pause();
+      patch.activeYouTubeId = null;
+      patch.activeVideoTrackId = null;
+    } else if (patch.activeSource === 'video') {
+      soundEngine.pauseAllPlayback();
+      patch.activeYouTubeId = null;
+      patch.activeSpotifyUri = null;
+    } else if (patch.activeSource === 'library') {
+      videoEngine.pause();
+      patch.activeYouTubeId = null;
+      patch.activeSpotifyUri = null;
+      patch.activeVideoTrackId = null;
+    } else if (patch.isPlaying === false) {
+      // Pause active audio engine playback and video engine
+      soundEngine.pauseAllPlayback();
+      videoEngine.pause();
+    }
+
     setAppState((prev) => ({
       ...prev,
       audio: { ...prev.audio, ...patch },
@@ -1315,21 +1593,6 @@ export function App() {
     });
   };
 
-  const handleCompleteIntroVideo = () => {
-    setIntroVideoOpen(false);
-    if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.setItem('habitra_intro_played', 'true');
-    }
-    handleUpdateProfile({ hasSeenWelcome: true });
-  };
-
-  const handleSkipIntroVideo = () => {
-    setIntroVideoOpen(false);
-    if (typeof sessionStorage !== 'undefined') {
-      sessionStorage.setItem('habitra_intro_played', 'true');
-    }
-    handleUpdateProfile({ hasSeenWelcome: true });
-  };
 
   const handleUpdateSecurity = (patch: Partial<SecuritySettings>) => {
     setAppState((prev) => ({
@@ -1404,6 +1667,15 @@ export function App() {
     }));
   };
 
+  // Memoized upcoming events for Dashboard view
+  const upcomingDashboardEvents = useMemo(() => {
+    const todayStr = formatLocalYMD(new Date());
+    return (appState.calendarEvents || [])
+      .filter((ev) => ev.date >= todayStr)
+      .sort((a, b) => a.date.localeCompare(b.date) || (a.startTime || '').localeCompare(b.startTime || ''))
+      .slice(0, 4);
+  }, [appState.calendarEvents]);
+
   // Audio track cycling & playlist/category queue management
   const [manifestTick, setManifestTick] = useState(0);
   useEffect(() => {
@@ -1458,6 +1730,11 @@ export function App() {
     playlistId?: string | null,
     extraPatch?: Partial<AudioSettings>
   ) => {
+    // Stop previous track only if switching to a different track
+    if (appState.audio.currentTrackId && appState.audio.currentTrackId !== trackId) {
+      soundEngine.pauseAllPlayback();
+    }
+
     const now = new Date();
     const playedAt = now.toLocaleTimeString('en-US', {
       hour: 'numeric',
@@ -1476,6 +1753,11 @@ export function App() {
         audio: {
           ...prev.audio,
           ...extraPatch,
+          activeSource: 'library',
+          activeYouTubeId: null,
+          activeSpotifyUri: null,
+          activeVideoTrackId: null,
+          playbackStatus: 'playing',
           currentTrackId: trackId,
           isPlaying: true,
           activePlaylistId:
@@ -1605,6 +1887,9 @@ export function App() {
       } else if (action === 'settings') {
         setIsMinimizedToTray(false);
         setActiveTab('settings');
+      } else if (action === 'toggle_widget') {
+        setIsMinimizedToTray(false);
+        setQuickWidgetOpen((prev) => !prev);
       }
     });
 
@@ -1853,6 +2138,38 @@ export function App() {
     }
   };
 
+  const handleImportBackup = (restored: AppDataState) => {
+    // 1. Automatically create safety snapshot of current data before overwriting
+    const preImportSnapshot = createVersionedBackupSnapshot(appState);
+    preImportSnapshot.label = `Pre-Import_Safety_Snapshot_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
+
+    // 2. Preserve existing security password if the imported backup did not specify one
+    const existingPasswordHash = appState.security.passwordHash;
+    const existingSalt = appState.security.salt;
+    const finalSecurity = {
+      ...restored.security,
+      passwordHash: restored.security.passwordHash || existingPasswordHash || null,
+      salt: restored.security.salt || existingSalt || null,
+    };
+
+    // 3. Keep versioned backups history so the user can easily undo/revert with 1 click
+    const combinedBackups = [
+      preImportSnapshot,
+      ...(appState.versionedBackups || []),
+      ...(restored.versionedBackups || []).filter((b) => b.id !== preImportSnapshot.id),
+    ].slice(0, 20);
+
+    const finalState: AppDataState = {
+      ...restored,
+      security: finalSecurity,
+      versionedBackups: combinedBackups,
+    };
+
+    setAppState(finalState);
+    setReminderToast('✓ Backup restored safely. Pre-import rollback snapshot created.');
+    window.setTimeout(() => setReminderToast(null), 4000);
+  };
+
   const handleMinimizeToTray = () => {
     setIsMinimizedToTray(true);
     if (!appState.profile.hasSeenTrayNotice) {
@@ -1870,18 +2187,25 @@ export function App() {
   // Global Keyboard Shortcuts (Ctrl+K, N, G, Space, M, F, L, 1-5, Esc)
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
-      // Never allow global shortcuts while workspace is password-locked or intro video is active
+      // Never allow global shortcuts while workspace is password-locked or setup wizard is active
       if (
         (appState.security.isLocked && appState.security.passwordHash) ||
-        introVideoOpen
+        setupWizardOpen
       ) {
         return;
       }
 
       // Ctrl+K or Cmd+K opens Command Palette from anywhere
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+      if ((e.ctrlKey || e.metaKey) && !e.shiftKey && e.key.toLowerCase() === 'k') {
         e.preventDefault();
         setCommandPaletteOpen((v) => !v);
+        return;
+      }
+
+      // Ctrl+Shift+H or Cmd+Shift+H toggles Quick Desktop Widget
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'h') {
+        e.preventDefault();
+        setQuickWidgetOpen((v) => !v);
         return;
       }
 
@@ -1958,7 +2282,7 @@ export function App() {
   }, [
     commandPaletteOpen,
     ambientModeOpen,
-    introVideoOpen,
+    setupWizardOpen,
     appState.audio.isMuted,
     appState.security.isLocked,
     appState.security.passwordHash,
@@ -2084,31 +2408,47 @@ export function App() {
       ? 'font-mono-tabular'
       : '';
 
-  // Prevent exposing the dashboard before IndexedDB state & password lock check complete
+  const displayUserName = appState.profile.userName?.trim() || '';
+
+  // 1. Elegant loading screen while initializing local state, IndexedDB, and services
   if (!isLoaded) {
     return (
-      <div className="min-h-screen bg-[#0b0f19] text-slate-100 flex flex-col items-center justify-center p-6 select-none">
-        <div className="w-14 h-14 rounded-2xl bg-indigo-500/20 border border-indigo-400/40 flex items-center justify-center text-3xl mb-3 animate-pulse">
-          🏡
-        </div>
-        <div className="text-lg font-bold text-white tracking-tight">
-          Habitra
-        </div>
-        <div className="text-xs text-slate-400 mt-0.5">
-          Small Habits. Big Life.
-        </div>
-      </div>
+      <HabitraLoadingScreen
+        statusText="Restoring local sanctuary & habits..."
+        accentColor={appState.style.accentColor}
+      />
     );
   }
 
-  // Lock screen check (strictly takes priority before Welcome Setup or Dashboard)
+  // 2. First-time setup wizard (or reopened on demand from Settings)
+  if (setupWizardOpen) {
+    return (
+      <HabitraSetupWizard
+        initialState={appState}
+        onFinish={(updatedState) => {
+          setAppState(updatedState);
+          setSetupWizardOpen(false);
+          saveAppStateToDB(updatedState);
+        }}
+        onClose={() => setSetupWizardOpen(false)}
+        isReopeningFromSettings={Boolean(appState.profile.hasSeenWelcome)}
+      />
+    );
+  }
+
+  // 2.5 Clean Fast Loading Screen during initial IndexedDB restoration
+  if (!isLoaded) {
+    return <HabitraLoadingScreen accentColor={appState.style.accentColor} />;
+  }
+
+  // 3. Show the password lock screen whenever password protection is enabled and the application is locked
   if (appState.security.isLocked && appState.security.passwordHash) {
     return (
       <SecurityLockOverlay
         security={appState.security}
         environment={appState.environment}
         styleSettings={appState.style}
-        userName={appState.profile.userName}
+        userName={displayUserName}
         onUnlock={() => handleUpdateSecurity({ isLocked: false })}
         onUpdateSecurity={handleUpdateSecurity}
         onEmergencyReset={handleResetAllData}
@@ -2120,84 +2460,130 @@ export function App() {
     id: NavigationTab;
     label: string;
     subtitle: string;
-    group: 'Daily Tracking' | 'Focus & Audio' | 'Insights & Space';
+    group: 'Focus & Room' | 'Habits & Progress' | 'Media & Tools' | 'System';
     icon: React.ElementType;
+    badge?: number | string;
   }[] = [
+    // 1. Focus & Room
     {
       id: 'dashboard',
       label: 'Dashboard',
       subtitle: 'Daily overview & sanctuary',
-      group: 'Daily Tracking',
+      group: 'Focus & Room',
       icon: Home,
-    },
-    {
-      id: 'habits',
-      label: 'Habits',
-      subtitle: 'Manage & track all habits',
-      group: 'Daily Tracking',
-      icon: CheckSquare,
-    },
-    {
-      id: 'dailylog',
-      label: 'Daily Camera',
-      subtitle: 'Photo check-ins & visual log',
-      group: 'Daily Tracking',
-      icon: Camera,
-    },
-    {
-      id: 'calendar',
-      label: 'Calendar',
-      subtitle: 'Monthly completion matrix',
-      group: 'Daily Tracking',
-      icon: CalendarIcon,
-    },
-    {
-      id: 'goals',
-      label: 'Goals',
-      subtitle: 'Long-term milestones',
-      group: 'Daily Tracking',
-      icon: Target,
     },
     {
       id: 'timer',
       label: 'Focus Timer',
-      subtitle: 'Pomodoro & deep work studio',
-      group: 'Focus & Audio',
+      subtitle: 'Pomodoro & deep work',
+      group: 'Focus & Room',
       icon: TimerIcon,
     },
     {
-      id: 'music',
-      label: 'Music Player',
-      subtitle: 'Lo-Fi tracks & ambient mixer',
-      group: 'Focus & Audio',
-      icon: Music,
+      id: 'myspace',
+      label: 'Sanctuary Space',
+      subtitle: 'Scenes, atmosphere & room',
+      group: 'Focus & Room',
+      icon: Sparkles,
+    },
+
+    // 2. Habits & Progress
+    {
+      id: 'habits',
+      label: 'Habits',
+      subtitle: 'Rituals & daily checklist',
+      group: 'Habits & Progress',
+      icon: CheckSquare,
+      badge: stats.remainingToday > 0 ? stats.remainingToday : undefined,
     },
     {
-      id: 'reminders',
-      label: 'Reminders',
-      subtitle: 'Alerts & water hydration',
-      group: 'Focus & Audio',
-      icon: Bell,
+      id: 'calendar',
+      label: 'Calendar',
+      subtitle: 'Events & monthly agenda',
+      group: 'Habits & Progress',
+      icon: CalendarIcon,
+      badge: upcomingDashboardEvents.length > 0 ? upcomingDashboardEvents.length : undefined,
+    },
+    {
+      id: 'goals',
+      label: 'Goals',
+      subtitle: 'Milestones & long-term targets',
+      group: 'Habits & Progress',
+      icon: Target,
+    },
+    {
+      id: 'dailylog',
+      label: 'Daily Camera',
+      subtitle: 'Photo journal & reflections',
+      group: 'Habits & Progress',
+      icon: Camera,
+      badge: (appState.dailyUpdates || []).length > 0 ? (appState.dailyUpdates || []).length : undefined,
     },
     {
       id: 'statistics',
       label: 'Statistics',
-      subtitle: 'Streaks, XP & analytics',
-      group: 'Insights & Space',
+      subtitle: 'Genuine analytics & streaks',
+      group: 'Habits & Progress',
       icon: BarChart3,
     },
     {
-      id: 'myspace',
-      label: 'My Space',
-      subtitle: 'Customize scenes & theme',
-      group: 'Insights & Space',
-      icon: Sparkles,
+      id: 'insights',
+      label: 'Insights',
+      subtitle: 'Deterministic velocity & trends',
+      group: 'Habits & Progress',
+      icon: TrendingUp,
     },
+    {
+      id: 'timeline',
+      label: 'Timeline',
+      subtitle: 'Chronological activity audit log',
+      group: 'Habits & Progress',
+      icon: History,
+    },
+
+    // 3. Media & Tools
+    {
+      id: 'music',
+      label: 'Music Player',
+      subtitle: 'Local audio & video tracks',
+      group: 'Media & Tools',
+      icon: Music,
+    },
+    {
+      id: 'streaming',
+      label: 'Focus Streams',
+      subtitle: 'Live Lo-Fi, YouTube & Spotify',
+      group: 'Media & Tools',
+      icon: Radio,
+    },
+    {
+      id: 'finsa',
+      label: 'FINSA Studio',
+      subtitle: 'Wealth OS & Money River',
+      group: 'Media & Tools',
+      icon: DollarSign,
+    },
+    {
+      id: 'reminders',
+      label: 'Reminders',
+      subtitle: 'Water, posture & alerts',
+      group: 'Media & Tools',
+      icon: Bell,
+    },
+    {
+      id: 'apps',
+      label: 'Apps Hub',
+      subtitle: 'Quick launchers & workspace tools',
+      group: 'Media & Tools',
+      icon: Layers,
+    },
+
+    // 4. System
     {
       id: 'settings',
       label: 'Settings',
-      subtitle: 'Profile, lock & local backup',
-      group: 'Insights & Space',
+      subtitle: 'Security, backups & preferences',
+      group: 'System',
       icon: Settings,
     },
   ];
@@ -2205,8 +2591,12 @@ export function App() {
   const activeNavMeta =
     navItems.find((item) => item.id === activeTab) || navItems[0];
   const ActiveSectionIcon = activeNavMeta.icon;
-  const navGroups: ('Daily Tracking' | 'Focus & Audio' | 'Insights & Space')[] =
-    ['Daily Tracking', 'Focus & Audio', 'Insights & Space'];
+  const navGroups: ('Focus & Room' | 'Habits & Progress' | 'Media & Tools' | 'System')[] = [
+    'Focus & Room',
+    'Habits & Progress',
+    'Media & Tools',
+    'System',
+  ];
 
   const sidebarPosterScene =
     PIXEL_SCENES.find((s) => s.id === 'living_sanctuary') || PIXEL_SCENES[0];
@@ -2354,8 +2744,8 @@ export function App() {
           <div className="flex items-center justify-between gap-2 px-1.5 py-2 mb-3">
             <div
               className="flex items-center gap-2.5 min-w-0 cursor-pointer group"
-              onClick={() => setIntroVideoOpen(true)}
-              title="Play Habitra Logo Reveal Video Intro"
+              onClick={() => setSetupWizardOpen(true)}
+              title="Habitra Setup & Configuration Wizard"
             >
               <HabitraLogo
                 variant={sidebarCollapsed ? 'icon' : 'full'}
@@ -2420,13 +2810,17 @@ export function App() {
                             <span className="truncate">{item.label}</span>
                           )}
                         </div>
-                        {!sidebarCollapsed &&
-                          item.id === 'dailylog' &&
-                          (appState.dailyUpdates || []).length > 0 && (
-                            <span className="text-[10px] font-mono-tabular opacity-80">
-                              {(appState.dailyUpdates || []).length}
-                            </span>
-                          )}
+                        {!sidebarCollapsed && item.badge !== undefined && (
+                          <span
+                            className={`text-[10px] font-mono-tabular px-1.5 py-0.5 rounded-full transition-colors ${
+                              active
+                                ? 'bg-white/20 text-white font-semibold'
+                                : 'bg-slate-800/80 text-slate-300'
+                            }`}
+                          >
+                            {item.badge}
+                          </span>
+                        )}
                       </button>
                     );
                   })}
@@ -2434,6 +2828,87 @@ export function App() {
               );
             })}
           </nav>
+        </div>
+
+        {/* Integrated Persistent Audio Mini-Player */}
+        <div className="p-3 border-t border-slate-800/80 shrink-0">
+          <div className="p-2.5 rounded-xl bg-slate-950/80 border border-slate-800/80 space-y-2">
+            <div className="flex items-center justify-between gap-2 min-w-0">
+              <button
+                type="button"
+                onClick={() => handleSelectTab('music')}
+                className="flex items-center gap-2 min-w-0 flex-1 text-left cursor-pointer group"
+                title="Open Music Player"
+              >
+                <div className="w-7 h-7 rounded-lg bg-indigo-500/15 border border-indigo-400/30 flex items-center justify-center text-indigo-400 shrink-0">
+                  <Music className="w-3.5 h-3.5" />
+                </div>
+                {!sidebarCollapsed && (
+                  <div className="min-w-0 flex-1">
+                    <div className="text-[11px] font-semibold text-white truncate group-hover:text-indigo-300 transition-colors">
+                      {currentTrackObj?.title || 'Velvet Rain Lo-Fi'}
+                    </div>
+                    <div className="text-[9px] text-slate-400 truncate">
+                      {appState.audio.isPlaying ? 'Playing Ambient' : 'Paused · Click to play'}
+                    </div>
+                  </div>
+                )}
+              </button>
+
+              {appState.audio.isPlaying && (
+                <div className="flex items-end gap-0.5 h-3 shrink-0 px-1" title="Sound Playing">
+                  <span className="w-0.5 h-full bg-indigo-400 rounded-full animate-pulse" />
+                  <span className="w-0.5 h-2 bg-indigo-400 rounded-full animate-bounce" />
+                  <span className="w-0.5 h-2.5 bg-indigo-400 rounded-full animate-pulse" />
+                </div>
+              )}
+            </div>
+
+            {/* Controls Row */}
+            <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-800/60">
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() =>
+                    handleUpdateAudio({ isPlaying: !appState.audio.isPlaying })
+                  }
+                  className="p-1 rounded-lg bg-indigo-600/30 hover:bg-indigo-600/50 text-indigo-300 hover:text-white cursor-pointer"
+                  title={appState.audio.isPlaying ? 'Pause Audio' : 'Play Audio'}
+                >
+                  {appState.audio.isPlaying ? (
+                    <Pause className="w-3.5 h-3.5 fill-current" />
+                  ) : (
+                    <Play className="w-3.5 h-3.5 fill-current" />
+                  )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleNextTrack(true)}
+                  className="p-1 rounded-lg text-slate-400 hover:text-white hover:bg-slate-800/80 cursor-pointer"
+                  title="Next Track"
+                >
+                  <SkipForward className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {!sidebarCollapsed && (
+                <div className="flex items-center gap-1.5 flex-1 max-w-[80px] ml-2">
+                  <Volume2 className="w-3 h-3 text-slate-500 shrink-0" />
+                  <input
+                    type="range"
+                    min={0}
+                    max={100}
+                    value={appState.audio.musicVolume}
+                    onChange={(e) =>
+                      handleUpdateAudio({ musicVolume: Number(e.target.value) })
+                    }
+                    className="w-full h-1 bg-slate-800 rounded-lg accent-indigo-500 cursor-pointer"
+                    title={`Music Volume: ${appState.audio.musicVolume}%`}
+                  />
+                </div>
+              )}
+            </div>
+          </div>
         </div>
 
         {/* Bottom Cozy Pixel Vignette & Quote */}
@@ -2788,6 +3263,21 @@ export function App() {
             </div>
           </header>
 
+          {/* ADAPTIVE WORKSPACE MODES BAR */}
+          <div className="flex items-center justify-between gap-3">
+            <AdaptiveWorkspaceModes
+              currentMode={appState.profile.workspaceMode || 'daily_life'}
+              defaultMode={appState.profile.defaultWorkspaceMode || 'daily_life'}
+              onSelectMode={(mode) => {
+                handleUpdateProfile({ workspaceMode: mode });
+              }}
+              onSetDefaultMode={(mode) => {
+                handleUpdateProfile({ defaultWorkspaceMode: mode });
+              }}
+              onNavigateTab={(tab) => handleSelectTab(tab)}
+            />
+          </div>
+
           {/* MOBILE SCROLLABLE SECTION PILL BAR (Quick 1-Tap Access to All 11 Separate Sections) */}
           <div className="md:hidden flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
             {navItems.map((item) => {
@@ -2816,8 +3306,8 @@ export function App() {
             })}
           </div>
 
-          {/* MAIN DEDICATED SECTION CONTENT */}
-          <main className="flex-1 min-w-0 space-y-5">
+          {/* MAIN DEDICATED SECTION CONTENT (With Spatial Navigation Animation) */}
+          <main key={activeTab} className="flex-1 min-w-0 space-y-5 spatial-page-enter">
             {/* Optional Search Bar */}
             {showSearchBar && (
               <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-900/90 border border-slate-700">
@@ -2844,9 +3334,94 @@ export function App() {
 
             {/* 1. DASHBOARD SECTION (Strictly Dashboard Only — No Attached Calendar, Music Player, or Customize Space) */}
             {activeTab === 'dashboard' && (
-              <div className="space-y-5">
+              <div className="spatial-page-enter space-y-5">
+                {/* PERSONAL DAILY BRIEF */}
+                {appState.profile.dailyBriefDismissedDate !== formatLocalYMD(new Date()) ? (
+                  <PersonalDailyBrief
+                    appState={appState}
+                    onNavigateTab={(tab) => handleSelectTab(tab)}
+                    onToggleHabit={(habitId) =>
+                      handleToggleHabitCompletion(habitId, formatLocalYMD(new Date()))
+                    }
+                    onStartFocusSession={() => {
+                      handleChangeTimerMode('focus');
+                      setIsTimerRunning(true);
+                      handleSelectTab('timer');
+                    }}
+                    onQuickDropSavings={(record) => {
+                      setAppState((prev) => {
+                        const prevFinsa = prev.finsa || createDefaultFinsaState();
+                        return {
+                          ...prev,
+                          finsa: {
+                            ...prevFinsa,
+                            dailySavings: [record, ...(prevFinsa.dailySavings || [])],
+                          },
+                          profile: { ...prev.profile, lastSavedAt: stampSaveTime() },
+                        };
+                      });
+                    }}
+                    onDismissBrief={() => {
+                      handleUpdateProfile({
+                        dailyBriefDismissedDate: formatLocalYMD(new Date()),
+                      });
+                    }}
+                    onUpdateSections={(secs) => {
+                      handleUpdateProfile({ dailyBriefSections: secs });
+                    }}
+                    isTimerRunning={isTimerRunning}
+                    onToggleTimer={handleStartPauseTimer}
+                  />
+                ) : (
+                  <div className="flex items-center justify-between p-3.5 rounded-2xl bg-slate-900/60 border border-slate-800 text-xs">
+                    <span className="text-slate-400">
+                      You dismissed today's Daily Brief overview.
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleUpdateProfile({ dailyBriefDismissedDate: undefined })
+                      }
+                      className="text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer"
+                    >
+                      Revisit Today's Brief →
+                    </button>
+                  </div>
+                )}
+
+                {/* SIGNATURE SPATIAL FOCUS PORTAL (Deep Flow Zen Monolith) */}
+                {(isSpatialFocusActive || appState.profile.workspaceMode === 'focus') && (
+                  <div className="spatial-page-enter">
+                    <SpatialFocusPortal
+                      timer={appState.timer}
+                      secondsRemaining={secondsRemaining}
+                      isTimerRunning={isTimerRunning}
+                      onStartPauseTimer={handleStartPauseTimer}
+                      onResetTimer={handleResetTimer}
+                      onSkipTimer={handleSkipTimer}
+                      onChangeTimerMode={handleChangeTimerMode}
+                      onUpdateTimerSettings={handleUpdateTimer}
+                      audio={appState.audio}
+                      onUpdateAudio={handleUpdateAudio}
+                      styleSettings={appState.style}
+                      onClosePortal={() => {
+                        setIsSpatialFocusActive(false);
+                        if (appState.profile.workspaceMode === 'focus') {
+                          handleUpdateProfile({ workspaceMode: 'daily_life' });
+                        }
+                      }}
+                    />
+                  </div>
+                )}
+
                 {!appState.environment.minimalMode ? (
-                  <div className="relative rounded-2xl overflow-hidden border border-slate-800/90 shadow-2xl">
+                  <div
+                    className={`relative rounded-2xl overflow-hidden border border-slate-800/90 shadow-2xl transition-all duration-700 ${
+                      isSpatialFocusActive || appState.profile.workspaceMode === 'focus'
+                        ? 'scale-[0.98] blur-[2px] brightness-[0.55] opacity-65'
+                        : 'scale-100 blur-0 brightness-100 opacity-100'
+                    }`}
+                  >
                     <PixelEnvironmentCanvas
                       environment={appState.environment}
                       styleSettings={appState.style}
@@ -2920,70 +3495,31 @@ export function App() {
                       className="w-full h-[260px] sm:h-[320px]"
                     />
 
-                    {/* Clean Top-Right Scene & Ambient Controls inside Canvas */}
-                    <div className="absolute top-3.5 right-3.5 z-10 flex items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const idx = PIXEL_SCENES.findIndex(
-                            (s) => s.id === appState.environment.sceneId
-                          );
-                          const next =
-                            PIXEL_SCENES[(idx + 1) % PIXEL_SCENES.length];
-                          handleUpdateEnvironment({
-                            sceneId: next.id,
-                            weather: next.defaultWeather,
-                          });
-                        }}
-                        className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-950/80 hover:bg-slate-900 border border-slate-800/90 backdrop-blur-md text-xs text-white transition-colors cursor-pointer"
-                        title="Switch Pixel Scene"
-                      >
-                        <span>{currentScene.name}</span>
-                        <Shuffle className="w-3 h-3 text-slate-400" />
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => setAmbientModeOpen(true)}
-                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600/85 hover:bg-indigo-500 border border-indigo-400/50 backdrop-blur-md text-xs font-medium text-white transition-colors cursor-pointer shadow"
-                        title="Enter Full-Screen Ambient Mode (Shortcut: F)"
-                      >
-                        <Maximize2 className="w-3.5 h-3.5" />
-                        <span className="hidden sm:inline">Ambient Mode</span>
-                      </button>
-                    </div>
-
-                    {/* Bottom-Left Greeting Overlay inside Pixel Room */}
-                    <div className="absolute left-5 bottom-5 z-10 pointer-events-none max-w-lg">
-                      <div className="text-sm sm:text-base text-slate-200 font-medium drop-shadow">
-                        {appState.profile.userName
-                          ? greetingText
-                          : greetingText.replace(',', '')}
+                    {/* Bottom-Left Subtle Room Atmosphere Label (Clean & Unobtrusive) */}
+                    <div className="absolute left-5 bottom-4 z-10 pointer-events-none max-w-lg">
+                      <div className="text-xs text-slate-300 font-medium drop-shadow-sm flex items-center gap-1.5">
+                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                        <span>{currentScene.name} · {appState.environment.timeOfDay === 'auto' ? 'Dynamic Sky' : appState.environment.timeOfDay.toUpperCase()}</span>
                       </div>
-                      <h2 className="text-2xl sm:text-3xl font-bold text-white tracking-tight flex items-center gap-2 mt-0.5 drop-shadow-md">
-                        <span>{appState.profile.userName || 'Sanctuary'}</span>
-                        <span className="text-xl">🌙</span>
+                      <h2 className="text-xl sm:text-2xl font-bold text-white tracking-tight flex items-center gap-2 mt-0.5 drop-shadow-md">
+                        <span>{displayUserName ? `${greetingText} ${displayUserName}` : 'Habitra Sanctuary'}</span>
                       </h2>
-                      <p className="text-xs sm:text-sm text-slate-200/90 mt-1 drop-shadow">
-                        “{appState.profile.quote}”
-                      </p>
                     </div>
                   </div>
                 ) : (
                   <div
-                    className="rounded-2xl border border-slate-800/90 p-4 flex flex-wrap items-center justify-between gap-3"
+                    className="rounded-2xl border border-slate-800/90 p-4 flex flex-wrap items-center justify-between gap-3 shadow-lg"
                     style={panelBgStyle}
                   >
                     <div>
-                      <h2 className="text-lg font-bold text-white">
-                        {appState.profile.userName &&
-                        appState.profile.userName.trim()
-                          ? `${greetingText} ${appState.profile.userName.trim()}`
+                      <h2 className="text-base font-bold text-white">
+                        {displayUserName
+                          ? `${greetingText} ${displayUserName}`
                           : greetingText.replace(',', '')}
                       </h2>
                       <p className="text-xs text-slate-400">
-                        Minimal Mode · {stats.completedToday}/{stats.totalHabits}{' '}
-                        completed today ({stats.dailyProgressPercent}%)
+                        Minimal Mode Active · {stats.completedToday}/{stats.totalHabits}{' '}
+                        habits completed today ({stats.dailyProgressPercent}%)
                       </p>
                     </div>
                     <button
@@ -2998,6 +3534,410 @@ export function App() {
                     </button>
                   </div>
                 )}
+
+                {/* DEDICATED SANCTUARY ENVIRONMENT & ATMOSPHERE TOOLBAR (Clean, Separate Deck) */}
+                <div
+                  className="rounded-2xl border border-slate-800/90 p-3 sm:px-4 sm:py-2.5 flex flex-wrap items-center justify-between gap-3 shadow-lg"
+                  style={panelBgStyle}
+                >
+                  {/* Left: Active Scene & Time/Weather Quick Switchers */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {/* Scene Selector Button */}
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900/90 border border-slate-700/80 text-xs font-medium text-white shadow-sm">
+                      <span className="text-slate-400 text-[11px]">Scene:</span>
+                      <span className="font-semibold">{currentScene.name}</span>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const idx = PIXEL_SCENES.findIndex((s) => s.id === appState.environment.sceneId);
+                          const next = PIXEL_SCENES[(idx + 1) % PIXEL_SCENES.length];
+                          soundEngine.playUiClick();
+                          handleUpdateEnvironment({
+                            sceneId: next.id,
+                            weather: next.defaultWeather,
+                          });
+                        }}
+                        className="p-0.5 ml-1 text-slate-400 hover:text-white cursor-pointer"
+                        title="Cycle to Next Scene"
+                      >
+                        <Shuffle className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+
+                    {/* Time of Day Segmented Control */}
+                    <div className="flex items-center gap-0.5 p-1 rounded-xl bg-slate-950/80 border border-slate-800">
+                      {(
+                        [
+                          { id: 'morning', label: 'Dawn', icon: '🌅' },
+                          { id: 'afternoon', label: 'Day', icon: '☀️' },
+                          { id: 'evening', label: 'Dusk', icon: '🌇' },
+                          { id: 'night', label: 'Night', icon: '🌙' },
+                        ] as const
+                      ).map((t) => {
+                        const active = appState.environment.timeOfDay === t.id;
+                        return (
+                          <button
+                            key={t.id}
+                            type="button"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              handleUpdateEnvironment({ timeOfDay: t.id });
+                            }}
+                            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1 ${
+                              active
+                                ? 'bg-amber-500/20 text-amber-200 border border-amber-400/40 shadow-xs'
+                                : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            <span className="text-[11px]">{t.icon}</span>
+                            <span className="hidden sm:inline">{t.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {/* Weather Segmented Control */}
+                    <div className="flex items-center gap-0.5 p-1 rounded-xl bg-slate-950/80 border border-slate-800">
+                      {(
+                        [
+                          { id: 'clear', label: 'Clear', icon: '☀️' },
+                          { id: 'rain', label: 'Rain', icon: '🌧️' },
+                          { id: 'storm', label: 'Storm', icon: '⚡' },
+                          { id: 'snow', label: 'Snow', icon: '❄️' },
+                        ] as const
+                      ).map((w) => {
+                        const active = appState.environment.weather === w.id;
+                        return (
+                          <button
+                            key={w.id}
+                            type="button"
+                            onClick={() => {
+                              soundEngine.playUiClick();
+                              handleUpdateEnvironment({ weather: w.id });
+                            }}
+                            className={`px-2 py-1 rounded-lg text-xs font-medium transition-colors cursor-pointer flex items-center gap-1 ${
+                              active
+                                ? 'bg-teal-500/20 text-teal-200 border border-teal-400/40 shadow-xs'
+                                : 'text-slate-400 hover:text-slate-200'
+                            }`}
+                          >
+                            <span className="text-[11px]">{w.icon}</span>
+                            <span className="hidden sm:inline">{w.label}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+
+                  {/* Right: Ambient Mode & Optional Controls Drawer Toggle */}
+                  <div className="flex items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSanctuaryControlsOpen((prev) => !prev)}
+                      className={`px-3 py-1.5 rounded-xl border text-xs font-medium flex items-center gap-1.5 transition-colors cursor-pointer ${
+                        sanctuaryControlsOpen
+                          ? 'bg-indigo-600/30 border-indigo-400/50 text-indigo-200'
+                          : 'bg-slate-900/80 hover:bg-slate-800 border-slate-700/80 text-slate-300'
+                      }`}
+                      title="Open Sanctuary Ambiance & Lighting Controls"
+                    >
+                      <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+                      <span>{sanctuaryControlsOpen ? 'Hide Controls' : 'Sanctuary Controls'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => setAmbientModeOpen(true)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 border border-indigo-400/50 text-xs font-semibold text-white transition-colors cursor-pointer shadow"
+                      title="Enter Full-Screen Ambient Mode (Shortcut: F)"
+                    >
+                      <Maximize2 className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Ambient Mode</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* EXPANDABLE SANCTUARY CONTROLS DRAWER (When Toggled) */}
+                {sanctuaryControlsOpen && (
+                  <div
+                    className="rounded-2xl border border-indigo-500/30 p-4 shadow-xl bg-slate-950/90 backdrop-blur-xl space-y-4 animate-in fade-in slide-in-from-top-2 duration-200"
+                    style={panelBgStyle}
+                  >
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-800">
+                      <div className="flex items-center gap-2 text-xs font-bold text-white">
+                        <Sliders className="w-4 h-4 text-indigo-400" />
+                        <span>Sanctuary Environment & Atmosphere Tuning</span>
+                      </div>
+                      <span className="text-[11px] text-slate-400 font-mono">
+                        Saved in real-time
+                      </span>
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                      {/* 1. Lighting Warmth */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-300">Lighting Warmth</span>
+                          <span className="text-indigo-400 font-mono-tabular">
+                            {appState.environment.lightingWarmth}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={appState.environment.lightingWarmth}
+                          onChange={(e) =>
+                            handleUpdateEnvironment({
+                              lightingWarmth: Number(e.target.value),
+                            })
+                          }
+                          className="w-full h-1.5 bg-slate-800 rounded-lg accent-indigo-500 cursor-pointer"
+                        />
+                      </div>
+
+                      {/* 2. Particles Density */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-300">Atmosphere Particles</span>
+                          <span className="text-teal-400 font-mono-tabular">
+                            {appState.environment.particlesDensity}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={appState.environment.particlesDensity}
+                          onChange={(e) =>
+                            handleUpdateEnvironment({
+                              particlesDensity: Number(e.target.value),
+                            })
+                          }
+                          className="w-full h-1.5 bg-slate-800 rounded-lg accent-teal-500 cursor-pointer"
+                        />
+                      </div>
+
+                      {/* 3. Animation Intensity */}
+                      <div className="space-y-1.5">
+                        <span className="text-xs text-slate-300 block">
+                          Animation Intensity
+                        </span>
+                        <div className="flex items-center gap-1 p-0.5 rounded-lg bg-slate-900 border border-slate-800">
+                          {(['low', 'medium', 'high'] as const).map((intensity) => (
+                            <button
+                              key={intensity}
+                              type="button"
+                              onClick={() =>
+                                handleUpdateEnvironment({
+                                  animationIntensity: intensity,
+                                })
+                              }
+                              className={`flex-1 py-1 rounded text-[11px] font-medium capitalize cursor-pointer transition-colors ${
+                                appState.environment.animationIntensity === intensity
+                                  ? 'bg-indigo-600 text-white'
+                                  : 'text-slate-400 hover:text-white'
+                              }`}
+                            >
+                              {intensity}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+
+                      {/* 4. Ambient Sound Volume */}
+                      <div className="space-y-1.5">
+                        <div className="flex items-center justify-between text-xs">
+                          <span className="text-slate-300">Ambient Background Audio</span>
+                          <span className="text-amber-400 font-mono-tabular">
+                            {appState.audio.ambientVolume}%
+                          </span>
+                        </div>
+                        <input
+                          type="range"
+                          min={0}
+                          max={100}
+                          value={appState.audio.ambientVolume}
+                          onChange={(e) =>
+                            handleUpdateAudio({
+                              ambientVolume: Number(e.target.value),
+                            })
+                          }
+                          className="w-full h-1.5 bg-slate-800 rounded-lg accent-amber-500 cursor-pointer"
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* DAILY BRIEFING & FAST CAPTURE DECK */}
+                <div
+                  className="rounded-2xl border border-slate-800/90 p-4 sm:p-5 shadow-xl space-y-4"
+                  style={panelBgStyle}
+                >
+                  <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-3 border-b border-slate-800/80">
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2 text-xs font-medium text-indigo-400">
+                        <span>🗓️</span>
+                        <span>
+                          {new Date().toLocaleDateString('en-US', {
+                            weekday: 'long',
+                            month: 'long',
+                            day: 'numeric',
+                            year: 'numeric',
+                          })}
+                        </span>
+                        <span className="text-slate-500">·</span>
+                        <span className="text-slate-400 font-mono-tabular">
+                          {stats.completedToday}/{stats.totalHabits} Habits Finished Today
+                        </span>
+                      </div>
+                      <h2 className="text-lg sm:text-xl font-bold text-white tracking-tight flex items-center gap-2">
+                        <span>{displayUserName ? `${greetingText} ${displayUserName}` : greetingText.replace(',', '')}</span>
+                      </h2>
+                      <p className="text-xs text-slate-400 max-w-xl">
+                        {stats.totalHabits === 0
+                          ? 'Welcome to your private local sanctuary. Add your first habit below to start your streak.'
+                          : stats.remainingToday === 0
+                          ? '✨ All daily rituals completed for today! Take time to rest or explore deep focus.'
+                          : `You have ${stats.remainingToday} habit${stats.remainingToday > 1 ? 's' : ''} left for today. Keep up your ${stats.overallCurrentStreak}-day streak!`}
+                      </p>
+                    </div>
+
+                    {/* Quick Hydration & Quick Timer Shortcut Pills */}
+                    <div className="flex flex-wrap items-center gap-2 self-start md:self-center">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          soundEngine.playHabitCheck(true);
+                          handleUpdateProfile({
+                            waterCompletedToday: Math.min(
+                              appState.profile.waterDailyGoal + 4,
+                              appState.profile.waterCompletedToday + 1
+                            ),
+                          });
+                        }}
+                        className="px-3 py-2 rounded-xl bg-sky-500/15 hover:bg-sky-500/25 border border-sky-400/35 text-sky-200 text-xs font-semibold flex items-center gap-1.5 transition-colors cursor-pointer"
+                        title="Log a glass of water (+1)"
+                      >
+                        <Droplets className="w-4 h-4 text-sky-400" />
+                        <span>Water: {appState.profile.waterCompletedToday}/{appState.profile.waterDailyGoal}</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleStartPauseTimer}
+                        className="px-3.5 py-2 rounded-xl bg-indigo-600/90 hover:bg-indigo-500 text-white text-xs font-semibold flex items-center gap-1.5 shadow transition-colors cursor-pointer"
+                        title="Start or pause today's focus timer"
+                      >
+                        <TimerIcon className="w-4 h-4" />
+                        <span>{isTimerRunning ? `Focusing (${timerFormattedStr})` : `Start Focus (${appState.timer.focusMinutes}m)`}</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Next Upcoming Agenda & Fast Habit/Task Capture Row */}
+                  <div className="grid grid-cols-1 md:grid-cols-12 gap-3 items-center">
+                    {/* Next Upcoming Event */}
+                    <div className="md:col-span-5 flex items-center gap-2.5 px-3 py-2 rounded-xl bg-slate-950/70 border border-slate-800/80 text-xs">
+                      <CalendarIcon className="w-4 h-4 text-indigo-400 shrink-0" />
+                      <div className="min-w-0 flex-1 truncate">
+                        {upcomingDashboardEvents.length > 0 ? (
+                          <div className="flex items-center gap-1.5 truncate">
+                            <span className="font-semibold text-white truncate">
+                              {upcomingDashboardEvents[0].title}
+                            </span>
+                            <span className="text-slate-400 text-[11px] font-mono-tabular shrink-0">
+                              {upcomingDashboardEvents[0].startTime || upcomingDashboardEvents[0].date}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-400">No scheduled calendar events today</span>
+                        )}
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() => handleSelectTab('calendar')}
+                        className="text-[11px] text-indigo-300 hover:text-white shrink-0 cursor-pointer"
+                      >
+                        View Calendar →
+                      </button>
+                    </div>
+
+                    {/* Fast Task & Habit Capture Field */}
+                    <form
+                      onSubmit={(e) => {
+                        e.preventDefault();
+                        const val = quickCaptureInput.trim();
+                        if (!val) return;
+                        soundEngine.playSaveSuccess();
+                        handleSaveHabit({
+                          name: val,
+                          icon: '🌱',
+                          color: appState.style.accentColor,
+                          goalDays: 30,
+                          frequency: 'daily',
+                          startDate: formatLocalYMD(new Date()),
+                        });
+                        setQuickCaptureInput('');
+                      }}
+                      className="md:col-span-7 flex items-center gap-2"
+                    >
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          value={quickCaptureInput}
+                          onChange={(e) => setQuickCaptureInput(e.target.value)}
+                          placeholder="Quickly capture a new habit or task for today..."
+                          className="w-full px-3.5 py-2 pl-9 rounded-xl bg-slate-950/70 border border-slate-800/80 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 transition-colors"
+                        />
+                        <Plus className="w-4 h-4 text-slate-500 absolute left-3 top-1/2 -translate-y-1/2" />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={!quickCaptureInput.trim()}
+                        className="px-3.5 py-2 rounded-xl text-xs font-semibold text-white transition-opacity disabled:opacity-40 cursor-pointer shrink-0"
+                        style={{ backgroundColor: appState.style.accentColor }}
+                      >
+                        + Add
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* Compact FINSA Personal Wealth Glance */}
+                  {appState.finsa?.enabled && (
+                    <div className="pt-2 border-t border-slate-800/60 flex flex-wrap items-center justify-between gap-3 text-xs">
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1.5 text-slate-300 font-medium">
+                          <DollarSign className="w-3.5 h-3.5 text-emerald-400" />
+                          <span>FINSA Wealth:</span>
+                          <span className="font-mono font-bold text-white">
+                            {formatCents(
+                              calculateNetWorth(appState.finsa.accounts),
+                              appState.finsa.currency,
+                              appState.finsa.privacyMode
+                            )}
+                          </span>
+                        </div>
+                        <span className="text-slate-600">·</span>
+                        <span className="text-slate-400">
+                          {appState.finsa.accounts.length} Accounts Tracked
+                        </span>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectTab('finsa')}
+                          className="text-[11px] font-semibold text-emerald-400 hover:text-emerald-300 transition-colors cursor-pointer flex items-center gap-1"
+                        >
+                          <span>Open Money River &amp; Studio</span>
+                          <span>→</span>
+                        </button>
+                      </div>
+                    </div>
+                  )}
+                </div>
 
                 {/* CLEAN 7-CARD KPI SUMMARY ROW (Below Canvas — Never Overlapping) */}
                 <div className="grid grid-cols-2 sm:grid-cols-4 xl:grid-cols-7 gap-2.5">
@@ -3176,6 +4116,7 @@ export function App() {
                     }}
                     onNavigateTab={(tab) => setActiveTab(tab)}
                     onOpenCameraForHabit={handleOpenCameraForHabit}
+                    onOpenFocusPortal={() => setIsSpatialFocusActive(true)}
                   />
                 ) : (
                   /* 3-COLUMN CLASSIC STUDIO GRID: Today's Habits | Monthly Progress | Top Goals */
@@ -3604,6 +4545,238 @@ export function App() {
                   )}
                 </div>
                 )}
+
+                {/* UPCOMING AGENDA, HYDRATION & QUICK FOCUS ACTIONS ROW */}
+                {!appState.environment.minimalMode && (
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+                    {/* UPCOMING CALENDAR EVENTS */}
+                    <div
+                      className="lg:col-span-5 rounded-2xl border border-slate-800/90 p-4 shadow-xl flex flex-col justify-between"
+                      style={panelBgStyle}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <CalendarIcon className="w-4 h-4 text-indigo-400" />
+                            <h3 className="text-sm font-semibold text-white">Upcoming Events</h3>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleSelectTab('calendar')}
+                            className="text-xs text-indigo-400 hover:text-indigo-300 font-medium flex items-center gap-1 cursor-pointer"
+                          >
+                            <span>Open Calendar</span>
+                            <ArrowRight className="w-3 h-3" />
+                          </button>
+                        </div>
+
+                        <div className="space-y-2">
+                          {upcomingDashboardEvents.length === 0 ? (
+                            <div className="py-6 text-center rounded-xl bg-slate-900/40 border border-dashed border-slate-800 text-xs text-slate-400">
+                              <span>No upcoming events scheduled.</span>
+                              <button
+                                type="button"
+                                onClick={() => handleSelectTab('calendar')}
+                                className="block mx-auto mt-2 text-indigo-400 hover:text-indigo-300 font-semibold cursor-pointer"
+                              >
+                                + Schedule an Event
+                              </button>
+                            </div>
+                          ) : (
+                            upcomingDashboardEvents.map((ev) => (
+                              <div
+                                key={ev.id}
+                                onClick={() => handleSelectTab('calendar')}
+                                className="p-2.5 rounded-xl bg-slate-900/60 hover:bg-slate-900/90 border border-slate-800/70 flex items-center justify-between gap-3 cursor-pointer transition-colors"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <span
+                                    className="w-2.5 h-2.5 rounded-full shrink-0"
+                                    style={{ backgroundColor: ev.color || '#6366f1' }}
+                                  />
+                                  <div className="min-w-0">
+                                    <div className="text-xs font-semibold text-white truncate">{ev.title}</div>
+                                    <div className="text-[11px] text-slate-400 font-mono-tabular">
+                                      {ev.date} {ev.allDay ? '· All Day' : ev.startTime ? `· ${ev.startTime}` : ''}
+                                    </div>
+                                  </div>
+                                </div>
+                                <span className="px-2 py-0.5 rounded-lg text-[10px] uppercase font-mono font-semibold bg-slate-800 text-slate-300 shrink-0">
+                                  {ev.category}
+                                </span>
+                              </div>
+                            ))
+                          )}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* HYDRATION & ACTIVE REMINDERS */}
+                    <div
+                      className="lg:col-span-4 rounded-2xl border border-slate-800/90 p-4 shadow-xl flex flex-col justify-between"
+                      style={panelBgStyle}
+                    >
+                      <div>
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <Droplets className="w-4 h-4 text-cyan-400" />
+                            <h3 className="text-sm font-semibold text-white">Daily Hydration</h3>
+                          </div>
+                          <span className="text-xs font-mono-tabular text-cyan-300 font-semibold">
+                            {appState.profile.waterCompletedToday} / {appState.profile.waterDailyGoal} cups
+                          </span>
+                        </div>
+
+                        {/* Water Progress Bar */}
+                        <div className="mb-3">
+                          <div className="h-2 rounded-full bg-slate-950 overflow-hidden mb-1.5">
+                            <div
+                              className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-500"
+                              style={{
+                                width: `${Math.min(
+                                  100,
+                                  Math.round(
+                                    (appState.profile.waterCompletedToday /
+                                      Math.max(1, appState.profile.waterDailyGoal)) *
+                                      100
+                                  )
+                                )}%`,
+                              }}
+                            />
+                          </div>
+                          <div className="flex items-center justify-between text-[11px] text-slate-400 font-mono-tabular">
+                            <span>{Math.round((appState.profile.waterCompletedToday / Math.max(1, appState.profile.waterDailyGoal)) * 100)}% of daily goal</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                soundEngine.playHabitCheck(true);
+                                handleUpdateProfile({
+                                  waterCompletedToday: appState.profile.waterCompletedToday + 1,
+                                });
+                              }}
+                              className="px-2 py-0.5 rounded-lg bg-cyan-500/20 hover:bg-cyan-500/30 border border-cyan-400/40 text-cyan-200 text-[11px] font-semibold cursor-pointer transition-colors"
+                            >
+                              + Log Cup
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Quick Reminders List */}
+                        <div className="space-y-1.5 pt-2 border-t border-slate-800/80">
+                          <div className="text-[11px] font-semibold text-slate-400 flex items-center justify-between">
+                            <span>Active Reminders</span>
+                            <button
+                              type="button"
+                              onClick={() => handleSelectTab('reminders')}
+                              className="text-indigo-400 hover:text-indigo-300 cursor-pointer"
+                            >
+                              Manage
+                            </button>
+                          </div>
+                          {(appState.reminders || []).slice(0, 3).map((rem) => (
+                            <div
+                              key={rem.id}
+                              className="p-2 rounded-xl bg-slate-900/60 border border-slate-800/70 flex items-center justify-between gap-2 text-xs"
+                            >
+                              <div className="flex items-center gap-2 truncate">
+                                <span>{rem.icon}</span>
+                                <span className={`truncate ${rem.enabled ? 'text-slate-200' : 'text-slate-500 line-through'}`}>
+                                  {rem.title}
+                                </span>
+                              </div>
+                              <input
+                                type="checkbox"
+                                checked={rem.enabled}
+                                onChange={() => handleToggleReminder(rem.id)}
+                                className="accent-indigo-500 cursor-pointer"
+                              />
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* QUICK ACTION LAUNCHER */}
+                    <div
+                      className="lg:col-span-3 rounded-2xl border border-slate-800/90 p-4 shadow-xl flex flex-col justify-between"
+                      style={panelBgStyle}
+                    >
+                      <div>
+                        <div className="flex items-center gap-2 mb-3">
+                          <Sparkles className="w-4 h-4 text-amber-400" />
+                          <h3 className="text-sm font-semibold text-white">Quick Actions</h3>
+                        </div>
+
+                        <div className="grid grid-cols-1 gap-2">
+                          <button
+                            type="button"
+                            onClick={handleStartPauseTimer}
+                            className="p-2.5 rounded-xl bg-indigo-600/20 hover:bg-indigo-600/30 border border-indigo-500/40 text-xs font-semibold text-indigo-200 flex items-center gap-2 cursor-pointer transition-colors"
+                          >
+                            <Play className="w-3.5 h-3.5 fill-current text-indigo-400" />
+                            <span>{isTimerRunning ? 'Pause Timer' : 'Focus Timer 25m'}</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingHabit(null);
+                              setHabitModalOpen(true);
+                            }}
+                            className="p-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-xs font-semibold text-slate-200 flex items-center gap-2 cursor-pointer transition-colors"
+                          >
+                            <Plus className="w-3.5 h-3.5 text-emerald-400" />
+                            <span>New Habit</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => handleSelectTab('apps')}
+                            className="p-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-xs font-semibold text-slate-200 flex items-center gap-2 cursor-pointer transition-colors"
+                          >
+                            <span className="text-xs">⚡</span>
+                            <span>Apps Launcher</span>
+                          </button>
+
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setJournalDateStr(selectedDateStr);
+                              setJournalModalOpen(true);
+                            }}
+                            className="p-2.5 rounded-xl bg-slate-900/80 hover:bg-slate-800 border border-slate-700/80 text-xs font-semibold text-slate-200 flex items-center gap-2 cursor-pointer transition-colors"
+                          >
+                            <span className="text-xs">📓</span>
+                            <span>Daily Reflection</span>
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                )}
+
+                {/* 3. INTERACTIVE UNIFIED DAILY TIMELINE */}
+                <UnifiedDailyTimeline
+                  habits={filteredActiveHabits}
+                  completions={appState.completions}
+                  calendarEvents={appState.calendarEvents || []}
+                  selectedDate={selectedDate}
+                  selectedDateStr={selectedDateStr}
+                  focusMinutesToday={appState.timer.totalFocusMinutesToday}
+                  waterCompleted={appState.profile.waterCompletedToday}
+                  waterGoal={appState.profile.waterDailyGoal}
+                  panelBgStyle={panelBgStyle}
+                  styleSettings={appState.style}
+                  onToggleHabit={handleToggleHabitCompletion}
+                  onNavigateTab={handleSelectTab}
+                  onStartFocusTimer={handleStartPauseTimer}
+                  onLogWaterCup={() => {
+                    soundEngine.playHabitCheck(true);
+                    handleUpdateProfile({
+                      waterCompletedToday: appState.profile.waterCompletedToday + 1,
+                    });
+                  }}
+                />
               </div>
             )}
 
@@ -3645,26 +4818,29 @@ export function App() {
               />
             )}
 
-            {/* 4. CALENDAR SECTION */}
+            {/* 4. CALENDAR SECTION (Dedicated Agenda & Event Application) */}
             {activeTab === 'calendar' && (
-              <HabitCalendarSection
-                habits={filteredActiveHabits}
-                completions={appState.completions}
-                monthViewDate={monthViewDate}
-                onChangeMonth={(delta) => {
-                  const next = new Date(
-                    monthViewDate.getFullYear(),
-                    monthViewDate.getMonth() + delta,
-                    1
-                  );
-                  setMonthViewDate(next);
-                }}
-                onResetToToday={() => setMonthViewDate(new Date())}
-                onToggleCompletion={handleToggleHabitCompletion}
-                onInspectHabit={(habit) => setInspectingHabitId(habit.id)}
+              <CalendarApplicationView
+                events={appState.calendarEvents || []}
                 styleSettings={appState.style}
                 panelBgStyle={panelBgStyle}
-                fullMonthMode
+                onUpdateEvents={(updatedEvents) => {
+                  setAppState((prev) => ({
+                    ...prev,
+                    calendarEvents: updatedEvents,
+                    profile: { ...prev.profile, lastSavedAt: stampSaveTime() },
+                  }));
+                }}
+                onQuickCreateTask={(name) => {
+                  handleSaveHabit({
+                    name,
+                    icon: '🎯',
+                    color: '#6366f1',
+                    goalDays: 7,
+                    frequency: 'daily',
+                    startDate: formatLocalYMD(new Date()),
+                  });
+                }}
               />
             )}
 
@@ -3992,6 +5168,191 @@ export function App() {
               />
             )}
 
+            {/* FOCUS STREAMS SECTION (Live Lo-Fi, YouTube & Spotify) */}
+            {activeTab === 'streaming' && (
+              <div className="space-y-5">
+                <section
+                  className="rounded-2xl border border-slate-800/90 p-5 shadow-xl space-y-4"
+                  style={panelBgStyle}
+                >
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h2 className="text-base sm:text-lg font-bold text-white flex items-center gap-2">
+                        <Radio className="w-5 h-5 text-indigo-400" />
+                        <span>Focus Streams &amp; Live Radio</span>
+                      </h2>
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        Stream continuous lo-fi beats, ambient video broadcasts, and Spotify focus playlists. Streams remain playing in the background while you navigate Habitra.
+                      </p>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleSelectTab('music')}
+                        className="px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-700/80 text-xs font-medium text-slate-300 flex items-center gap-1.5 cursor-pointer"
+                      >
+                        <Music className="w-3.5 h-3.5 text-indigo-400" />
+                        <span>Open Local Music</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Broadcast Channels Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+                    {/* YouTube Broadcasts */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-rose-500">▶</span> YouTube Lo-Fi Broadcasts
+                        </span>
+                        <span className="text-[11px] text-slate-500 font-mono-tabular">
+                          {(appState.audio.youtubeItems || []).length} stations
+                        </span>
+                      </div>
+
+                      <div className="space-y-2">
+                        {(appState.audio.youtubeItems || []).map((item) => {
+                          const isCurrent =
+                            appState.audio.activeYouTubeId === item.embedId &&
+                            appState.audio.activeSource === 'youtube';
+                          return (
+                            <div
+                              key={item.id}
+                              className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-3 ${
+                                isCurrent
+                                  ? 'bg-rose-500/15 border-rose-500/50 shadow-md'
+                                  : 'bg-slate-950/70 hover:bg-slate-900/80 border-slate-800/80'
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="text-xs font-semibold text-white truncate">
+                                  {item.title}
+                                </div>
+                                <div className="text-[11px] text-slate-400 truncate">
+                                  {isCurrent ? 'Broadcasting in background' : 'Ready to stream'}
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  soundEngine.playUiClick();
+                                  handleUpdateAudio({
+                                    activeSource: 'youtube',
+                                    activeYouTubeId: item.embedId,
+                                    isPlaying: true,
+                                  });
+                                }}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                                  isCurrent
+                                    ? 'bg-rose-600 text-white'
+                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                                }`}
+                              >
+                                <Play className="w-3.5 h-3.5 fill-current" />
+                                <span>{isCurrent ? 'Streaming' : 'Play'}</span>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+
+                    {/* Spotify Focus Playlists */}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between text-xs font-semibold text-slate-300">
+                        <span className="flex items-center gap-1.5">
+                          <span className="text-emerald-400">●</span> Spotify Study Sessions
+                        </span>
+                        <span className="text-[11px] text-slate-500 font-mono-tabular">
+                          {(appState.audio.spotifyItems || []).length} playlists
+                        </span>
+                      </div>
+
+                      <div className="space-y-2">
+                        {(appState.audio.spotifyItems || []).map((item) => {
+                          const isCurrent =
+                            appState.audio.activeSpotifyUri === item.embedUri &&
+                            appState.audio.activeSource === 'spotify';
+                          return (
+                            <div
+                              key={item.id}
+                              className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-3 ${
+                                isCurrent
+                                  ? 'bg-emerald-500/15 border-emerald-500/50 shadow-md'
+                                  : 'bg-slate-950/70 hover:bg-slate-900/80 border-slate-800/80'
+                              }`}
+                            >
+                              <div className="min-w-0 flex-1">
+                                <div className="text-xs font-semibold text-white truncate">
+                                  {item.title}
+                                </div>
+                                <div className="text-[11px] text-slate-400 truncate">
+                                  {isCurrent ? 'Streaming in background' : 'Ready to listen'}
+                                </div>
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  soundEngine.playUiClick();
+                                  handleUpdateAudio({
+                                    activeSource: 'spotify',
+                                    activeSpotifyUri: item.embedUri,
+                                    isPlaying: true,
+                                  });
+                                }}
+                                className={`px-3 py-1.5 rounded-xl text-xs font-semibold flex items-center gap-1.5 cursor-pointer transition-colors ${
+                                  isCurrent
+                                    ? 'bg-emerald-600 text-white'
+                                    : 'bg-slate-800 hover:bg-slate-700 text-slate-200'
+                                }`}
+                              >
+                                <Play className="w-3.5 h-3.5 fill-current" />
+                                <span>{isCurrent ? 'Streaming' : 'Play'}</span>
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </div>
+                </section>
+              </div>
+            )}
+
+            {/* APPS SECTION (Central Application Launcher) */}
+            {activeTab === 'apps' && (
+              <AppsHubView
+                customShortcuts={appState.customAppShortcuts || DEFAULT_APP_SHORTCUTS}
+                styleSettings={appState.style}
+                panelBgStyle={panelBgStyle}
+                audioSettings={appState.audio}
+                onUpdateAudio={handleUpdateAudio}
+                onNavigateTab={(tab) => handleSelectTab(tab)}
+                onSaveShortcuts={(shortcuts) => {
+                  setAppState((prev) => ({
+                    ...prev,
+                    customAppShortcuts: shortcuts,
+                    profile: { ...prev.profile, lastSavedAt: stampSaveTime() },
+                  }));
+                }}
+              />
+            )}
+
+            {/* FINSA PERSONAL FINANCE STUDIO */}
+            {activeTab === 'finsa' && (
+              <FinsaStudioView
+                finsaState={appState.finsa || createDefaultFinsaState()}
+                styleSettings={appState.style}
+                panelBgStyle={panelBgStyle}
+                onUpdateFinsa={handleUpdateFinsa}
+                onQuickNavigateTab={(tab) => handleSelectTab(tab as NavigationTab)}
+                userName={appState.profile.userName}
+              />
+            )}
+
             {/* 8. REMINDERS & HYDRATION SECTION */}
             {activeTab === 'reminders' && (
               <RemindersAndHydrationView
@@ -4039,6 +5400,30 @@ export function App() {
                 styleSettings={appState.style}
                 panelBgStyle={panelBgStyle}
               />
+            )}
+
+            {/* PERSONAL INSIGHTS SECTION */}
+            {activeTab === 'insights' && (
+              <div className="spatial-page-enter">
+                <PersonalInsightsView
+                  appState={appState}
+                  onNavigateTab={(tab) => handleSelectTab(tab)}
+                  styleSettings={appState.style}
+                  panelBgStyle={panelBgStyle}
+                />
+              </div>
+            )}
+
+            {/* PERSONAL ACTIVITY TIMELINE SECTION */}
+            {activeTab === 'timeline' && (
+              <div className="spatial-page-enter">
+                <PersonalActivityTimeline
+                  appState={appState}
+                  onNavigateTab={(tab) => handleSelectTab(tab)}
+                  styleSettings={appState.style}
+                  panelBgStyle={panelBgStyle}
+                />
+              </div>
             )}
 
             {/* 10. MY SPACE CUSTOMIZATION SECTION (With Live Environment Preview) */}
@@ -4105,9 +5490,9 @@ export function App() {
                 }}
                 onCreateVersionedSnapshot={handleCreateVersionedSnapshot}
                 onRestoreVersionedSnapshot={handleRestoreVersionedSnapshot}
-                onImportBackup={(restored) => setAppState(restored)}
+                onImportBackup={handleImportBackup}
                 onResetDefaults={handleResetAllData}
-                onReplayIntroVideo={() => setIntroVideoOpen(true)}
+                onReopenSetupWizard={() => setSetupWizardOpen(true)}
                 onMinimizeToSystemTray={handleMinimizeToTray}
                 onTriggerDiagnosticNotification={
                   handleTriggerSpecificTestNotification
@@ -4132,6 +5517,10 @@ export function App() {
                   setNotificationCenterOpen(true);
                 }}
                 panelBgStyle={panelBgStyle}
+                onUpdateStyle={handleUpdateStyle}
+                finsaCurrency={appState.finsa?.currency || 'INR'}
+                onUpdateCurrency={(curr) => handleUpdateFinsa({ currency: curr })}
+                onRestoreInterfaceDefaults={handleRestoreInterfaceDefaults}
               />
             )}
           </main>
@@ -4217,6 +5606,7 @@ export function App() {
         journalEntries={appState.journalEntries || {}}
         timerHistory={appState.timer.history || []}
         achievements={achievementsList}
+        calendarEvents={appState.calendarEvents || []}
         onNavigateTab={(tab) => setActiveTab(tab)}
         onOpenNewHabit={() => {
           setEditingHabit(null);
@@ -4249,7 +5639,15 @@ export function App() {
         }}
         onOpenNotifications={() => setNotificationCenterOpen(true)}
         onInspectHabit={(habit) => setInspectingHabitId(habit.id)}
-        onReplayIntroVideo={() => setIntroVideoOpen(true)}
+        onOpenSetupWizard={() => setSetupWizardOpen(true)}
+        onSelectWorkspaceMode={(mode) => {
+          handleUpdateProfile({ workspaceMode: mode });
+        }}
+        finsaTransactions={appState.finsa?.transactions || []}
+        onOpenDailyBrief={() => {
+          handleUpdateProfile({ dailyBriefDismissedDate: undefined });
+          handleSelectTab('dashboard');
+        }}
       />
 
       <NotificationCenterModal
@@ -4376,22 +5774,132 @@ export function App() {
         onSaveSecurity={handleUpdateSecurity}
       />
 
-      {/* Persistent YouTube & Spotify Streaming Player */}
+      {/* Universal Persistent Audio & Streaming Player */}
       <PersistentStreamingPlayer
         audio={appState.audio}
         activeTab={activeTab}
         onUpdateAudio={handleUpdateAudio}
         onNavigateToMusic={() => handleSelectTab('music')}
+        onNextTrack={() => handleNextTrack(true)}
+        onPrevTrack={handlePrevTrack}
         accentColor={appState.style.accentColor}
       />
 
-      {/* Habitra Official Logo Reveal Video Intro */}
-      <HabitraIntroVideo
-        isOpen={introVideoOpen}
-        videoSrc="/habitra-intro.mp4"
+      {/* Desktop Quick Access Widget (Ctrl+Shift+H) */}
+      {quickWidgetOpen && (
+        <DesktopQuickWidget
+          appState={appState}
+          onClose={() => setQuickWidgetOpen(false)}
+          onToggleHabit={(habitId) =>
+            handleToggleHabitCompletion(habitId, formatLocalYMD(new Date()))
+          }
+          onQuickAddHabit={(name) => {
+            handleSaveHabit({
+              name,
+              icon: '🌱',
+              color: '#10b981',
+              goalDays: 7,
+              frequency: 'daily',
+              startDate: formatLocalYMD(new Date()),
+            });
+          }}
+          onUpdateAudio={handleUpdateAudio}
+          onNextTrack={() => handleNextTrack(true)}
+          onPrevTrack={handlePrevTrack}
+          onOpenFullApp={() => setQuickWidgetOpen(false)}
+          isTimerRunning={isTimerRunning}
+          secondsRemaining={secondsRemaining}
+          onToggleTimer={handleStartPauseTimer}
+          onResetTimer={handleResetTimer}
+          onChangeTimerMode={(mode) => handleChangeTimerMode(mode)}
+          onAddDailySavings={(savingRecord) => {
+            setAppState((prev) => {
+              const prevFinsa = prev.finsa || createDefaultFinsaState();
+              const updatedSavings = [savingRecord, ...(prevFinsa.dailySavings || [])];
+              return {
+                ...prev,
+                finsa: {
+                  ...prevFinsa,
+                  dailySavings: updatedSavings,
+                },
+                profile: { ...prev.profile, lastSavedAt: stampSaveTime() },
+              };
+            });
+          }}
+          onUpdateWidgetSettings={(ws) => {
+            setAppState((prev) => ({
+              ...prev,
+              widgetSettings: ws,
+              profile: { ...prev.profile, lastSavedAt: stampSaveTime() },
+            }));
+          }}
+        />
+      )}
+
+      {/* Safe Returning User Profile Completion Modal */}
+      {profileCompletionOpen && (
+        <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="w-full max-w-sm rounded-3xl border border-slate-700 bg-slate-900 p-6 shadow-2xl text-white space-y-4 animate-fadeIn">
+            <div>
+              <span className="text-[10px] font-bold uppercase tracking-wider px-2 py-0.5 rounded bg-indigo-500/30 text-indigo-200">
+                Welcome Back
+              </span>
+              <h2 className="text-base font-bold text-white mt-1">Choose Your Display Name</h2>
+              <p className="text-xs text-slate-400 mt-1">
+                Your habits and workspace data have been safely restored. Please enter a display name to personalize your sanctuary.
+              </p>
+            </div>
+            <form
+              onSubmit={(e) => {
+                e.preventDefault();
+                const clean = profileCompletionName.trim();
+                if (!clean) return;
+                soundEngine.playSaveSuccess();
+                handleUpdateProfile({
+                  userName: clean,
+                  userNameConfigured: true,
+                });
+                setProfileCompletionOpen(false);
+              }}
+              className="space-y-3"
+            >
+              <input
+                type="text"
+                value={profileCompletionName}
+                onChange={(e) => setProfileCompletionName(e.target.value)}
+                placeholder="Your name or callsign..."
+                className="w-full px-3.5 py-2.5 rounded-xl bg-slate-950 border border-slate-700 text-white text-xs focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                required
+                autoFocus
+              />
+              <button
+                type="submit"
+                className="w-full py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow cursor-pointer transition-colors"
+              >
+                Save &amp; Enter Workspace
+              </button>
+            </form>
+          </div>
+        </div>
+      )}
+
+
+      {/* Desktop Keyboard Shortcuts Cheat Sheet Modal (?) */}
+      <KeyboardShortcutsModal
+        isOpen={shortcutsModalOpen}
+        onClose={() => setShortcutsModalOpen(false)}
         accentColor={appState.style.accentColor}
-        onComplete={handleCompleteIntroVideo}
-        onSkip={handleSkipIntroVideo}
+      />
+
+      {/* Fixed Desktop Media Bar (Slim Persistent Player on Bottom Edge) */}
+      <FixedDesktopMediaBar
+        audio={appState.audio}
+        onUpdateAudio={handleUpdateAudio}
+        onNavigateToMusic={() => handleSelectTab('music')}
+        onNavigateToStreaming={() => handleSelectTab('streaming')}
+        onNextTrack={() => handleNextTrack(true)}
+        onPrevTrack={handlePrevTrack}
+        accentColor={appState.style.accentColor}
       />
     </div>
   );

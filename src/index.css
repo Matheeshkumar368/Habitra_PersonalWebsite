@@ -70,12 +70,46 @@
   background: rgba(148, 163, 184, 0.45);
 }
 
+/* Spatial page transition between major Habitra sections */
+@keyframes spatialPageEnter {
+  from {
+    opacity: 0;
+    transform: translateY(8px) scale(0.996);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+.spatial-page-enter {
+  animation: spatialPageEnter 0.28s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  will-change: transform, opacity;
+}
+
+/* Interactive Timeline Glow & Shimmer */
+@keyframes timelinePulse {
+  0%, 100% {
+    box-shadow: 0 0 15px rgba(99, 102, 241, 0.25);
+  }
+  50% {
+    box-shadow: 0 0 25px rgba(99, 102, 241, 0.55);
+  }
+}
+
+.timeline-active-pulse {
+  animation: timelinePulse 3s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, ::before, ::after {
     animation-duration: 0.01ms !important;
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+  .spatial-page-enter {
+    animation: none !important;
   }
 }
 

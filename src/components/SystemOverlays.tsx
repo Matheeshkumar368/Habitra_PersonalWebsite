@@ -24,6 +24,7 @@ import {
   Award,
 } from 'lucide-react';
 import {
+  CalendarEvent,
   Goal,
   Habit,
   JournalEntry,
@@ -32,7 +33,9 @@ import {
   Reminder,
   SceneId,
   TimerSessionLog,
+  WorkspaceMode,
 } from '../types/app';
+import { FinsaTransaction } from '../types/finsa';
 import { AchievementBadge, MissedReminderItem } from '../services/backgroundEngine';
 import { PIXEL_SCENES, formatLocalYMD } from '../constants/scenesAndPresets';
 
@@ -45,6 +48,7 @@ interface CommandPaletteModalProps {
   journalEntries: Record<string, JournalEntry>;
   timerHistory: TimerSessionLog[];
   achievements: AchievementBadge[];
+  calendarEvents?: CalendarEvent[];
   onNavigateTab: (tab: NavigationTab) => void;
   onOpenNewHabit: () => void;
   onOpenNewGoal: () => void;
@@ -56,7 +60,10 @@ interface CommandPaletteModalProps {
   onOpenJournal: (dateStr?: string) => void;
   onOpenNotifications: () => void;
   onInspectHabit: (habit: Habit) => void;
-  onReplayIntroVideo?: () => void;
+  onOpenSetupWizard?: () => void;
+  onSelectWorkspaceMode?: (mode: WorkspaceMode) => void;
+  finsaTransactions?: FinsaTransaction[];
+  onOpenDailyBrief?: () => void;
 }
 
 export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
@@ -68,6 +75,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   journalEntries,
   timerHistory,
   achievements,
+  calendarEvents = [],
   onNavigateTab,
   onOpenNewHabit,
   onOpenNewGoal,
@@ -79,7 +87,10 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   onOpenJournal,
   onOpenNotifications,
   onInspectHabit,
-  onReplayIntroVideo,
+  onOpenSetupWizard,
+  onSelectWorkspaceMode,
+  finsaTransactions = [],
+  onOpenDailyBrief,
 }) => {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -205,17 +216,192 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
           onNavigateTab('settings');
         },
       },
-      ...(onReplayIntroVideo
+      {
+        id: 'cmd_nav_streaming',
+        category: 'Navigation',
+        icon: '📻',
+        title: 'Focus Streams & Lo-Fi Studio',
+        subtitle: 'Live Lo-Fi radio broadcasts, YouTube ambient streams, and study music',
+        action: () => {
+          onClose();
+          onNavigateTab('streaming');
+        },
+      },
+      {
+        id: 'cmd_nav_calendar',
+        category: 'Navigation',
+        icon: '📅',
+        title: 'Calendar & Schedule',
+        subtitle: 'View upcoming events, deadlines, and schedule timeblocks',
+        action: () => {
+          onClose();
+          onNavigateTab('calendar');
+        },
+      },
+      {
+        id: 'cmd_nav_apps',
+        category: 'Navigation',
+        icon: '🧩',
+        title: 'Apps & Productivity Hub',
+        subtitle: 'Quick launchers for Notion, Spotify, Figma, Todoist & custom tools',
+        action: () => {
+          onClose();
+          onNavigateTab('apps');
+        },
+      },
+      {
+        id: 'cmd_nav_habits',
+        category: 'Navigation',
+        icon: '🌱',
+        title: 'Habit Tracker',
+        subtitle: 'Daily routine checklist, completion tracking, and streaks',
+        action: () => {
+          onClose();
+          onNavigateTab('habits');
+        },
+      },
+      {
+        id: 'cmd_nav_myspace',
+        category: 'Navigation',
+        icon: '🛋️',
+        title: 'Sanctuary Living Space',
+        subtitle: 'Customize furniture, plants, lighting, and cozy pixel decor',
+        action: () => {
+          onClose();
+          onNavigateTab('myspace');
+        },
+      },
+      {
+        id: 'cmd_nav_stats',
+        category: 'Navigation',
+        icon: '📊',
+        title: 'Statistics & Analytics',
+        subtitle: 'Productivity trends, completion heatmaps, and deep focus analytics',
+        action: () => {
+          onClose();
+          onNavigateTab('statistics');
+        },
+      },
+      {
+        id: 'cmd_nav_finsa',
+        category: 'Navigation',
+        icon: '💰',
+        title: 'FINSA Personal Finance Studio',
+        subtitle: 'Wealth management, Money River cash flow, budgets, and balance forecasting',
+        action: () => {
+          onClose();
+          onNavigateTab('finsa');
+        },
+      },
+      {
+        id: 'cmd_nav_timeline',
+        category: 'Navigation',
+        icon: '📜',
+        title: 'Personal Activity Timeline',
+        subtitle: 'Audit trail of completed habits, focus sessions, events, and transactions',
+        action: () => {
+          onClose();
+          onNavigateTab('timeline');
+        },
+      },
+      {
+        id: 'cmd_nav_insights',
+        category: 'Navigation',
+        icon: '📈',
+        title: 'Personal Insights & Velocity',
+        subtitle: 'Deterministic habit consistency, focus rhythms, and savings goal projections',
+        action: () => {
+          onClose();
+          onNavigateTab('insights');
+        },
+      },
+      {
+        id: 'cmd_daily_brief',
+        category: 'Quick Command',
+        icon: '☀️',
+        title: 'Open Personal Daily Brief',
+        subtitle: 'Review your personalized overview of habits, agenda, and savings',
+        action: () => {
+          onClose();
+          if (onOpenDailyBrief) onOpenDailyBrief();
+          else onNavigateTab('dashboard');
+        },
+      },
+      ...(onSelectWorkspaceMode
         ? [
             {
-              id: 'cmd_intro_video',
-              category: 'Quick Command',
-              icon: '🎬',
-              title: 'Play Habitra Logo Reveal Video',
-              subtitle: 'Replay the official animated logo reveal intro',
+              id: 'cmd_mode_daily',
+              category: 'Workspace Mode',
+              icon: '✨',
+              title: 'Switch Mode: Daily Life',
+              subtitle: 'Balanced workspace with habits, daily timeline, and personal progress',
               action: () => {
                 onClose();
-                onReplayIntroVideo();
+                onSelectWorkspaceMode('daily_life');
+                onNavigateTab('dashboard');
+              },
+            },
+            {
+              id: 'cmd_mode_focus',
+              category: 'Workspace Mode',
+              icon: '⏱️',
+              title: 'Switch Mode: Focus & Pomodoro',
+              subtitle: 'Minimal distractions, prominent timer, and soothing soundscapes',
+              action: () => {
+                onClose();
+                onSelectWorkspaceMode('focus');
+                onNavigateTab('timer');
+              },
+            },
+            {
+              id: 'cmd_mode_planning',
+              category: 'Workspace Mode',
+              icon: '📅',
+              title: 'Switch Mode: Planning & Timetable',
+              subtitle: 'Calendar schedule, upcoming commitments, and milestone targets',
+              action: () => {
+                onClose();
+                onSelectWorkspaceMode('planning');
+                onNavigateTab('calendar');
+              },
+            },
+            {
+              id: 'cmd_mode_finance',
+              category: 'Workspace Mode',
+              icon: '💵',
+              title: 'Switch Mode: FINSA Wealth & Budget',
+              subtitle: 'Mechanical rolling counter, spending studio, and savings vault',
+              action: () => {
+                onClose();
+                onSelectWorkspaceMode('finance');
+                onNavigateTab('finsa');
+              },
+            },
+            {
+              id: 'cmd_mode_relax',
+              category: 'Workspace Mode',
+              icon: '🌲',
+              title: 'Switch Mode: Sanctuary Relax & Atmosphere',
+              subtitle: 'Full-screen living world, cozy environment, and music visualizer',
+              action: () => {
+                onClose();
+                onSelectWorkspaceMode('relax');
+                onNavigateTab('myspace');
+              },
+            },
+          ]
+        : []),
+      ...(onOpenSetupWizard
+        ? [
+            {
+              id: 'cmd_setup_wizard',
+              category: 'Quick Command',
+              icon: '✨',
+              title: 'Launch Setup Wizard',
+              subtitle: 'Reconfigure your sanctuary preferences & habits anytime',
+              action: () => {
+                onClose();
+                onOpenSetupWizard();
               },
             },
           ]
@@ -309,9 +495,35 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
       },
     }));
 
+    const calendarItems = (calendarEvents || []).map((e) => ({
+      id: `cal_${e.id}`,
+      category: 'Calendar Event',
+      icon: e.category === 'birthday' ? '🎂' : e.category === 'important' ? '⭐' : '📅',
+      title: e.title,
+      subtitle: `${e.date}${e.startTime ? ` at ${e.startTime}` : ' (All Day)'} • ${e.category}${e.location ? ` • ${e.location}` : ''}`,
+      action: () => {
+        onClose();
+        onNavigateTab('calendar');
+      },
+    }));
+
+    const transactionItems = (finsaTransactions || []).slice(0, 15).map((tx) => ({
+      id: `tx_${tx.id}`,
+      category: 'FINSA Transaction',
+      icon: tx.type === 'income' ? '📈' : tx.type === 'transfer' ? '🔄' : '💳',
+      title: `${tx.payeeOrPayer || 'Transaction'} (${tx.type.toUpperCase()})`,
+      subtitle: `${tx.date} • Category: ${tx.categoryId}${tx.notes ? ` • ${tx.notes}` : ''}`,
+      action: () => {
+        onClose();
+        onNavigateTab('finsa');
+      },
+    }));
+
     const all = [
       ...baseCommands,
       ...habitItems,
+      ...calendarItems,
+      ...transactionItems,
       ...goalItems,
       ...reminderItems,
       ...journalItems,
@@ -330,6 +542,7 @@ export const CommandPaletteModal: React.FC<CommandPaletteModalProps> = ({
   }, [
     query,
     habits,
+    calendarEvents,
     goals,
     reminders,
     journalEntries,

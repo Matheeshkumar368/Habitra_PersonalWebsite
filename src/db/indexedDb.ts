@@ -1,4 +1,9 @@
-import { AppDataState, VersionedBackupEntry } from '../types/app';
+import {
+  AppDataState,
+  SecuritySettings,
+  UserProfile,
+  VersionedBackupEntry,
+} from '../types/app';
 import { createDefaultAppState, createDefaultRoomLayout, formatLocalYMD } from '../constants/scenesAndPresets';
 
 const DB_NAME = 'SMK_Ambient_Habit_DB';
@@ -25,6 +30,10 @@ const STORE_KEYS: (keyof AppDataState)[] = [
   'dailyUpdates',
   'versionedBackups',
   'quickNote',
+  'calendarEvents',
+  'customAppShortcuts',
+  'widgetSettings',
+  'finsa',
 ];
 
 function openDatabase(): Promise<IDBDatabase> {
@@ -53,6 +62,20 @@ function openDatabase(): Promise<IDBDatabase> {
   });
 }
 
+export function sanitizeProfileName(
+  name?: unknown,
+  isConfigured?: unknown
+): { userName: string; userNameConfigured: boolean } {
+  if (typeof name !== 'string') {
+    return { userName: '', userNameConfigured: false };
+  }
+  const trimmed = name.trim();
+  if (!trimmed) {
+    return { userName: '', userNameConfigured: false };
+  }
+  return { userName: trimmed, userNameConfigured: Boolean(isConfigured) };
+}
+
 function mergeWithDefaults(partial: Partial<AppDataState>): AppDataState {
   const defaults = createDefaultAppState();
   const defaultRoom = createDefaultRoomLayout();
@@ -77,11 +100,10 @@ function mergeWithDefaults(partial: Partial<AppDataState>): AppDataState {
 
   const rawSecurity = partial.security || defaults.security;
   const rawProfile = partial.profile || defaults.profile;
-  const cleanConfiguredName =
-    rawProfile.userNameConfigured === true &&
-    typeof rawProfile.userName === 'string'
-      ? rawProfile.userName.trim()
-      : '';
+  const sanitizedName = sanitizeProfileName(
+    rawProfile.userName,
+    rawProfile.userNameConfigured
+  );
 
   return {
     habits: mergedHabits,
@@ -98,7 +120,7 @@ function mergeWithDefaults(partial: Partial<AppDataState>): AppDataState {
       showWorldHotspots:
         partial.environment?.showWorldHotspots !== undefined
           ? partial.environment.showWorldHotspots
-          : true,
+          : false,
     },
     style: { ...defaults.style, ...(partial.style || {}) },
     audio: {
@@ -126,8 +148,8 @@ function mergeWithDefaults(partial: Partial<AppDataState>): AppDataState {
     profile: {
       ...defaults.profile,
       ...rawProfile,
-      userName: cleanConfiguredName,
-      userNameConfigured: cleanConfiguredName.length > 0,
+      userName: sanitizedName.userName,
+      userNameConfigured: sanitizedName.userNameConfigured,
     },
     notificationHistory: Array.isArray(partial.notificationHistory)
       ? partial.notificationHistory
@@ -145,7 +167,86 @@ function mergeWithDefaults(partial: Partial<AppDataState>): AppDataState {
     versionedBackups: Array.isArray(partial.versionedBackups)
       ? partial.versionedBackups
       : defaults.versionedBackups,
+    calendarEvents: Array.isArray(partial.calendarEvents)
+      ? partial.calendarEvents
+      : defaults.calendarEvents || [],
+    customAppShortcuts:
+      Array.isArray(partial.customAppShortcuts) && partial.customAppShortcuts.length > 0
+        ? partial.customAppShortcuts
+        : defaults.customAppShortcuts || [],
+    widgetSettings: partial.widgetSettings
+      ? { ...(defaults.widgetSettings || {}), ...partial.widgetSettings }
+      : defaults.widgetSettings,
+    finsa: partial.finsa
+      ? { ...(defaults.finsa || {}), ...partial.finsa }
+      : defaults.finsa,
   };
+}
+
+function combineCandidates(
+  idb: Partial<AppDataState> | null,
+  local: Partial<AppDataState> | null
+): Partial<AppDataState> | null {
+  if (!idb && !local) return null;
+  if (!idb) return local;
+  if (!local) return idb;
+
+  const combined: Partial<AppDataState> = { ...idb };
+
+  for (const key of STORE_KEYS) {
+    const idbVal = (idb as Record<string, unknown>)[key];
+    const localVal = (local as Record<string, unknown>)[key];
+
+    if (idbVal === undefined) {
+      if (localVal !== undefined) {
+        (combined as Record<string, unknown>)[key] = localVal;
+      }
+      continue;
+    }
+    if (localVal === undefined) continue;
+
+    if (Array.isArray(idbVal) && Array.isArray(localVal)) {
+      // Retain whichever array actually has items, or the longer array
+      (combined as Record<string, unknown>)[key] =
+        localVal.length >= idbVal.length ? localVal : idbVal;
+    } else if (key === 'security') {
+      const idbSec = idbVal as SecuritySettings;
+      const localSec = localVal as SecuritySettings;
+      // Never discard a valid password hash if one candidate has it
+      if (idbSec.passwordHash) {
+        (combined as Record<string, unknown>)[key] = idbSec;
+      } else if (localSec.passwordHash) {
+        (combined as Record<string, unknown>)[key] = localSec;
+      } else {
+        (combined as Record<string, unknown>)[key] = idbSec;
+      }
+    } else if (key === 'profile') {
+      const idbProf = idbVal as UserProfile;
+      const localProf = localVal as UserProfile;
+      const idbTime = idbProf.lastActiveTimestamp || 0;
+      const localTime = localProf.lastActiveTimestamp || 0;
+      const fresher = localTime >= idbTime ? localProf : idbProf;
+      const older = localTime >= idbTime ? idbProf : localProf;
+      (combined as Record<string, unknown>)[key] = {
+        ...older,
+        ...fresher,
+      };
+    } else if (
+      typeof idbVal === 'object' &&
+      idbVal !== null &&
+      typeof localVal === 'object' &&
+      localVal !== null
+    ) {
+      (combined as Record<string, unknown>)[key] = { ...idbVal, ...localVal };
+    } else {
+      const idbTime = idb.profile?.lastActiveTimestamp || 0;
+      const localTime = local.profile?.lastActiveTimestamp || 0;
+      (combined as Record<string, unknown>)[key] =
+        localTime > idbTime ? localVal : idbVal;
+    }
+  }
+
+  return combined;
 }
 
 export async function loadAppStateFromDB(): Promise<{
@@ -157,14 +258,14 @@ export async function loadAppStateFromDB(): Promise<{
   let localCandidate: Partial<AppDataState> | null = null;
   let recoveredFromBackup = false;
 
-  // Read synchronous localStorage mirror first
+  // 1. Read synchronous localStorage mirror first
   try {
     const raw =
       localStorage.getItem(FALLBACK_STORAGE_KEY) ||
       localStorage.getItem(AUTO_BACKUP_STORAGE_KEY);
     if (raw) {
       const parsed = JSON.parse(raw) as Partial<AppDataState>;
-      if (parsed && parsed.profile) {
+      if (parsed && typeof parsed === 'object') {
         localCandidate = parsed;
         recoveredFromBackup = !localStorage.getItem(FALLBACK_STORAGE_KEY);
       }
@@ -173,6 +274,7 @@ export async function loadAppStateFromDB(): Promise<{
     console.warn('Fallback localStorage parse error:', e);
   }
 
+  // 2. Read IndexedDB stores
   try {
     const db = await openDatabase();
     const tx = db.transaction(STORE_NAME, 'readonly');
@@ -198,33 +300,27 @@ export async function loadAppStateFromDB(): Promise<{
 
     db.close();
 
-    if (results.profile && results.habits !== undefined) {
+    const hasAnyIdbData = STORE_KEYS.some(
+      (key) => (results as Record<string, unknown>)[key] !== undefined
+    );
+    if (hasAnyIdbData) {
       idbCandidate = results;
     }
   } catch (err) {
     console.warn('IndexedDB load warning, checking localStorage fallback:', err);
   }
 
-  // Pick the freshest candidate between IndexedDB and synchronous localStorage mirror
-  let chosenPartial: Partial<AppDataState> | null = null;
-  if (idbCandidate && localCandidate) {
-    const idbTime = idbCandidate.profile?.lastActiveTimestamp || 0;
-    const localTime = localCandidate.profile?.lastActiveTimestamp || 0;
-    const localHasWelcomeDone =
-      Boolean(localCandidate.profile?.hasSeenWelcome) &&
-      !idbCandidate.profile?.hasSeenWelcome;
-    chosenPartial =
-      localTime > idbTime || localHasWelcomeDone ? localCandidate : idbCandidate;
-    recoveredFromBackup = false;
-  } else if (idbCandidate) {
-    chosenPartial = idbCandidate;
-    recoveredFromBackup = false;
-  } else if (localCandidate) {
-    chosenPartial = localCandidate;
-  }
+  // 3. Intelligently combine candidates without discarding stored records
+  let combined = combineCandidates(idbCandidate, localCandidate);
 
-  if (chosenPartial) {
-    const merged = mergeWithDefaults(chosenPartial);
+  if (combined) {
+    const hasExistingPresence =
+      (idbCandidate && Object.keys(idbCandidate).length > 0) ||
+      (localCandidate && Object.keys(localCandidate).length > 0);
+
+    // Preserve existing security configuration as configured by the user
+    // (Never invent or force an unknown recovery password onto installations that don't have one)
+    const merged = mergeWithDefaults(combined);
     const todayStr = formatLocalYMD(new Date());
     if (merged.profile.lastWaterDate !== todayStr) {
       merged.profile.waterCompletedToday = 0;
@@ -233,19 +329,42 @@ export async function loadAppStateFromDB(): Promise<{
     return { state: merged, recoveredFromBackup };
   }
 
-  // First launch: persist default state immediately
-  await saveAppStateToDB(defaultState);
+  // Fresh installation with genuinely no existing records
   return { state: defaultState, recoveredFromBackup: false };
 }
 
-export async function saveAppStateToDB(state: AppDataState): Promise<void> {
+export async function saveAppStateToDB(
+  state: AppDataState,
+  options?: { allowPasswordRemoval?: boolean }
+): Promise<void> {
+  let passwordHash = state.security.passwordHash || null;
+  let salt = state.security.salt || null;
+
+  // Safeguard: do not silently overwrite an existing password hash with null unless explicitly authorized
+  if (!passwordHash && !options?.allowPasswordRemoval) {
+    try {
+      const existingRaw =
+        localStorage.getItem(FALLBACK_STORAGE_KEY) ||
+        localStorage.getItem(AUTO_BACKUP_STORAGE_KEY);
+      if (existingRaw) {
+        const parsed = JSON.parse(existingRaw) as Partial<AppDataState>;
+        if (parsed?.security?.passwordHash) {
+          passwordHash = parsed.security.passwordHash;
+          salt = parsed.security.salt || salt;
+        }
+      }
+    } catch {
+      // ignore
+    }
+  }
+
   const stampedState: AppDataState = {
     ...state,
     security: {
-      passwordHash: state.security.passwordHash || null,
-      salt: state.security.salt || null,
+      passwordHash,
+      salt,
       autoLockMinutes: state.security.autoLockMinutes || 0,
-      isLocked: Boolean(state.security.isLocked),
+      isLocked: Boolean(state.security.isLocked && passwordHash),
     },
     profile: {
       ...state.profile,
@@ -415,12 +534,20 @@ export function estimateDataSizeFormatted(state: AppDataState): string {
 }
 
 export function parseBackupJson(jsonText: string): AppDataState {
-  const parsed = JSON.parse(jsonText);
-  const data = parsed.data ? parsed.data : parsed;
-  if (!data || !Array.isArray(data.habits) || !data.environment || !data.profile) {
-    throw new Error('Invalid Habitra backup file format.');
+  if (!jsonText || typeof jsonText !== 'string' || !jsonText.trim()) {
+    throw new Error('Invalid Habitra backup file: File is empty.');
   }
-  return mergeWithDefaults(data);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonText);
+  } catch {
+    throw new Error('Invalid Habitra backup file: Could not parse JSON content.');
+  }
+  const data = (parsed as { data?: unknown })?.data ? (parsed as { data: unknown }).data : parsed;
+  if (!data || typeof data !== 'object') {
+    throw new Error('Invalid Habitra backup file: File must contain a JSON object.');
+  }
+  return mergeWithDefaults(data as Partial<AppDataState>);
 }
 
 export const parseImportedBackupJson = parseBackupJson;
@@ -451,6 +578,87 @@ export async function hashPasswordWithSalt(
   }
   return { hash: (h >>> 0).toString(16), salt };
 }
+
+// Dedicated Binary Storage for Offline Audio Files in Browser Development Mode
+const MEDIA_DB_NAME = 'Habitra_Media_DB';
+const MEDIA_STORE_NAME = 'audio_blobs';
+
+function openMediaDatabase(): Promise<IDBDatabase> {
+  return new Promise((resolve, reject) => {
+    if (typeof indexedDB === 'undefined') {
+      reject(new Error('IndexedDB is not supported in this browser environment.'));
+      return;
+    }
+    const request = indexedDB.open(MEDIA_DB_NAME, 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains(MEDIA_STORE_NAME)) {
+        db.createObjectStore(MEDIA_STORE_NAME);
+      }
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error('Failed to open Media DB'));
+  });
+}
+
+export async function saveAudioBlob(trackId: string, blob: Blob): Promise<void> {
+  try {
+    const db = await openMediaDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(MEDIA_STORE_NAME, 'readwrite');
+      tx.objectStore(MEDIA_STORE_NAME).put(blob, trackId);
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        reject(tx.error);
+      };
+    });
+  } catch (err) {
+    console.warn('Failed to save audio blob:', err);
+  }
+}
+
+export async function getAudioBlob(trackId: string): Promise<Blob | null> {
+  try {
+    const db = await openMediaDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(MEDIA_STORE_NAME, 'readonly');
+      const req = tx.objectStore(MEDIA_STORE_NAME).get(trackId);
+      req.onsuccess = () => {
+        db.close();
+        resolve(req.result || null);
+      };
+      req.onerror = () => {
+        db.close();
+        reject(req.error);
+      };
+    });
+  } catch {
+    return null;
+  }
+}
+
+export async function deleteAudioBlob(trackId: string): Promise<void> {
+  try {
+    const db = await openMediaDatabase();
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(MEDIA_STORE_NAME, 'readwrite');
+      tx.objectStore(MEDIA_STORE_NAME).delete(trackId);
+      tx.oncomplete = () => {
+        db.close();
+        resolve();
+      };
+      tx.onerror = () => {
+        db.close();
+        reject(tx.error);
+      };
+    });
+  } catch {}
+}
+
 
 
 

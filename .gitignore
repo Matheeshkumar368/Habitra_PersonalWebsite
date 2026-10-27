@@ -26,3 +26,21 @@ Thumbs.db
 *.log
 .idea/
 .vscode/
+
+# Local data extracts, snapshots and repair artifacts
+dev-dist/
+src_backup*/
+_idb_backup*
+_localstorage_backup*
+backup_pre_repair_src/
+scripts/all_extracted_snapshots.json
+scripts/inspect_*
+scripts/check_*
+scripts/decode_*
+scripts/extract_*
+scripts/find_*
+scripts/search_*
+scripts/debug_*
+scripts/list_*
+*.tgz
+
